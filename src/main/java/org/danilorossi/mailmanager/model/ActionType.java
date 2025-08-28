@@ -1,4 +1,4 @@
-package org.danilorossi.mailmanager;
+package org.danilorossi.mailmanager.model;
 
 // Enum per i tipi di azioni
 public enum ActionType {

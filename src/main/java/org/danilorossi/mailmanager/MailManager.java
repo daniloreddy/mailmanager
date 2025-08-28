@@ -1,35 +1,37 @@
 package org.danilorossi.mailmanager;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
+import com.google.gson.reflect.TypeToken;
+import jakarta.mail.Folder;
+import jakarta.mail.Session;
+import jakarta.mail.Store;
+import jakarta.mail.UIDFolder;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
 import java.util.logging.Logger;
-
-import javax.mail.Folder;
-import javax.mail.Message;
-import javax.mail.Session;
-import javax.mail.Store;
-import javax.mail.UIDFolder;
-
-import org.danilorossi.mailmanager.helpers.FileSystemUtils;
-import org.danilorossi.mailmanager.helpers.LogConfigurator;
-
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-
 import lombok.Cleanup;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.val;
+import org.danilorossi.mailmanager.helpers.FileSystemUtils;
+import org.danilorossi.mailmanager.helpers.LogConfigurator;
+import org.danilorossi.mailmanager.model.ImapConfig;
+import org.danilorossi.mailmanager.model.Rule;
+import org.danilorossi.mailmanager.model.State;
 
 public class MailManager {
 
   private static Gson gson = new Gson();
-  private static final String IMAP_CONFIG_FILE = "imap_config.json";
-  protected static final String STATE_FILE = "processing_state.json";
+  private static final String IMAPS_FILE = "imap_config.json";
+  protected static final String STATES_FILE = "processing_state.json";
   private static final String RULES_FILE = "rules.json";
   private static final Logger logger = Logger.getLogger(MailManager.class.getName());
 
@@ -40,39 +42,42 @@ public class MailManager {
   public static void main(String[] args) throws IOException {
 
     // Gestione parametro -help
-    if (Arrays.asList(args).contains("-help")) {
+    if (Arrays.asList(args).contains("-help")
+        || Arrays.asList(args).contains("--help")
+        || Arrays.asList(args).contains("-h")
+        || Arrays.asList(args).contains("/?")) {
       System.out.println("Utilizzo: java -jar mailmanager.jar [opzione]");
       System.out.println("Opzioni:");
       System.out.println("  -help     Mostra questo messaggio di aiuto");
       System.out.println("  -imap     Avvia strumento di configurazione");
       System.out.println("  -rules    Avvia strumento di configurazione");
       System.out.println("  -tui      Avvia strumento di configurazione");
-      System.out.println("  (nessuna) Esegue l'elaborazione delle email con la configurazione e le regole esistenti");
+      System.out.println(
+          "  (nessuna) Esegue l'elaborazione delle email con la configurazione e le regole"
+              + " esistenti");
       return;
     }
 
     val mailManager = new MailManager();
 
     try {
-      mailManager.loadImapConfig();
+      mailManager.loadImaps();
     } catch (IOException e) {
-      //      new ConsoleUI(mailManager).showImapConfigMenu();
       new ConsoleTUI(mailManager).start();
       return;
     }
 
     mailManager.loadRules();
+    mailManager.loadStates();
 
     // Modalità configurazione IMAP
     if (Arrays.asList(args).contains("-imap")) {
-      //      new ConsoleUI(mailManager).showImapConfigMenu();
       new ConsoleTUI(mailManager).start();
       return;
     }
 
     // Modalità gestione regole
     if (Arrays.asList(args).contains("-rules")) {
-      //      new ConsoleUI(mailManager).showRulesMenu();
       new ConsoleTUI(mailManager).start();
       return;
     }
@@ -85,31 +90,22 @@ public class MailManager {
 
     // Modalità elaborazione email
     mailManager.processEmails();
+
+    mailManager.saveStates();
   }
 
-  @Getter private ImapConfig imapConfig = ImapConfig.builder().build();
+  @Getter private List<ImapConfig> imaps = new ArrayList<>(); // Lista di configurazioni IMAP
+  @Getter private List<Rule> rules = new ArrayList<>(); //  Lista di regole
+  @Getter private List<State> states = new ArrayList<>(); // Lista di stati
+  private final Object statesLock = new Object();
 
-  @Getter private List<Rule> rules = new ArrayList<>();
-
-  // Metodo per caricare la configurazione IMAP da JSON
-  public void loadImapConfig() throws IOException {
-    val configFile = FileSystemUtils.getConfigFile(IMAP_CONFIG_FILE);
+  // Metodo per caricare le configurazioni IMAP da JSON
+  public void loadImaps() throws IOException {
+    val configFile = FileSystemUtils.getConfigFile(IMAPS_FILE);
+    val listType = new TypeToken<ArrayList<ImapConfig>>() {}.getType();
     @Cleanup val reader = new FileReader(configFile);
-    imapConfig = gson.fromJson(reader, ImapConfig.class);
-    if (imapConfig == null) throw new IOException("File di configurazione IMAP non trovato.");
-
-    // Sovrascrivi la password con quella dell'ambiente, se presente
-    val envPassword = System.getenv("MAIL_PASSWORD");
-    if (envPassword != null && !envPassword.isEmpty()) {
-      imapConfig =
-          ImapConfig.builder()
-              .host(imapConfig.getHost())
-              .port(imapConfig.getPort())
-              .username(imapConfig.getUsername())
-              .password(envPassword)
-              .inboxFolder(imapConfig.getInboxFolder())
-              .build();
-    }
+    imaps = gson.fromJson(reader, listType);
+    if (imaps == null) throw new IOException("File di configurazione IMAP non trovato.");
     logger.info("Caricata configurazione IMAP da file.");
   }
 
@@ -123,108 +119,137 @@ public class MailManager {
       if (rules == null) {
         rules = new ArrayList<>();
         logger.warning(
-            "File regole non trovato in "
-                + rulesFile.getAbsolutePath()
-                + ". Inizio con lista vuota.");
+            String.format("File regole non trovato in %s.", rulesFile.getAbsolutePath()));
       } else {
-        logger.info("Caricate " + rules.size() + " regole da " + rulesFile.getAbsolutePath());
+        logger.info(
+            String.format("Caricate %s recole da %s", rules.size(), rulesFile.getAbsolutePath()));
       }
-    } catch (IOException e) {
-      logger.warning(
-          "File regole non trovato in "
-              + rulesFile.getAbsolutePath()
-              + ". Inizio con lista vuota.");
+    } catch (IOException | JsonSyntaxException e) {
+      rules = new ArrayList<>();
+      logger.warning(String.format("File regole non trovato in %s.", rulesFile.getAbsolutePath()));
     }
   }
 
-  private State loadState() {
-    val stateFile = FileSystemUtils.getConfigFile(STATE_FILE);
-    if (!stateFile.exists()) return null;
+  // Metodo per caricare stati da JSON
+  public void loadStates() {
+    val statesFile = FileSystemUtils.getConfigFile(STATES_FILE);
     try {
-      @Cleanup val reader = new FileReader(stateFile);
-      return gson.fromJson(reader, State.class);
-    } catch (IOException e) {
-      logger.warning("Impossibile caricare il file di stato: " + e.getMessage());
-      return null;
+      @Cleanup val reader = new FileReader(statesFile);
+      val listType = new TypeToken<ArrayList<State>>() {}.getType();
+      states = gson.fromJson(reader, listType);
+      if (states == null) {
+        states = new ArrayList<>();
+        logger.warning(
+            String.format("File stati non trovato in %s.", statesFile.getAbsolutePath()));
+      } else {
+        logger.info(
+            String.format("Caricati %s stati da %s", states.size(), statesFile.getAbsolutePath()));
+      }
+    } catch (IOException | JsonSyntaxException e) {
+      states = new ArrayList<>();
+      logger.warning(String.format("File stati non trovato in %s.", statesFile.getAbsolutePath()));
     }
   }
 
-  private void saveState(State state) {
-    val stateFile = FileSystemUtils.getConfigFile(STATE_FILE);
-    try {
-      @Cleanup val writer = new FileWriter(stateFile);
-      gson.toJson(state, writer);
-    } catch (IOException e) {
-      logger.severe("Errore durante il salvataggio del file di stato: " + e.getMessage());
+  /*
+   public void processEmails() {
+    for (val imap : imaps) {
+      processEmails(imap);
     }
   }
+  */
 
   public void processEmails() {
+    val maxThreads =
+        Math.min(
+            imaps.size(),
+            Math.max(
+                Runtime.getRuntime().availableProcessors(), 8)); // I/O-bound: fino a 8 è spesso ok
+    var pool = Executors.newFixedThreadPool(maxThreads);
+    try {
+      var tasks = new java.util.ArrayList<Callable<Void>>();
+      for (var imap : imaps)
+        tasks.add(
+            () -> {
+              processEmails(imap);
+              return null;
+            });
+      pool.invokeAll(tasks); // attende la fine di tutti
+    } catch (InterruptedException ie) {
+      Thread.currentThread().interrupt();
+    } finally {
+      pool.shutdown();
+    }
+  }
+
+  private State getOrCreateState(@NonNull String imapName) {
+    synchronized (statesLock) {
+      for (val state : states) if (imapName.equals(state.getImapConfigName())) return state;
+
+      val state =
+          State.builder().imapConfigName(imapName).uidValidity(0).lastProcessedUid(0).build();
+      states.add(state);
+      return state;
+    }
+  }
+
+  private void processEmails(@NonNull final ImapConfig imap) {
 
     try {
       // Proprietà per la connessione IMAP con SSL
-      val properties = imapConfig.toProperties();
+      val properties = imap.toProperties();
 
       // Crea una sessione
       val emailSession = Session.getInstance(properties);
 
       // Connetti allo store IMAP
       @Cleanup Store store = emailSession.getStore("imaps");
-      store.connect(imapConfig.getHost(), imapConfig.getUsername(), imapConfig.getPassword());
+      store.connect(imap.getHost(), imap.getUsername(), imap.getPassword());
 
       // Apri la cartella Inbox in modalità read-write
-      @Cleanup Folder folder = store.getFolder(imapConfig.getInboxFolder());
+      @Cleanup Folder folder = store.getFolder(imap.getInboxFolder());
       folder.open(Folder.READ_WRITE);
 
       // Per usare i metodi UID, dobbiamo castare il Folder a UIDFolder
       val uidFolder = ((UIDFolder) folder);
+      val currentUidValidity = uidFolder.getUIDValidity();
+
+      // protetta da lock
+      val state = getOrCreateState(imap.getName());
 
       // Carica lo stato precedente
       long startUid = 1; // Default per la prima esecuzione
-      val lastState = loadState();
-      val currentUidValidity = uidFolder.getUIDValidity();
-
-      // Controlla la validità e imposta l'UID di partenza
-      if (lastState != null && lastState.getUidValidity() == currentUidValidity) {
-        startUid = lastState.getLastProcessedUid() + 1;
-        logger.info(
-            "Stato precedente caricato. Processo i messaggi a partire dall'UID: " + startUid);
+      if (state.getUidValidity() == currentUidValidity && state.getLastProcessedUid() > 0) {
+        startUid = state.getLastProcessedUid() + 1;
+        logger.info(String.format("Riparto da UID %s", startUid));
       } else {
-        logger.warning(
-            "Nessuno stato precedente valido trovato o UIDVALIDITY cambiato. Inizio dal primo messaggio.");
+        logger.warning("UIDVALIDITY cambiato o nessuno stato. Inizio dal primo messaggio.");
+        // in alternativa, per NON riprocessare lo storico:
+        // startUid = uidFolder.getUIDNext(); // processa solo i nuovi da ora in poi
       }
 
-      // Ottieni l'UID dell'ultimo messaggio
       val endUid = uidFolder.getUIDNext() - 1;
-
-      final Message[] messages;
       if (endUid >= startUid) {
-        // Scarica SOLO i nuovi messaggi
-        messages = uidFolder.getMessagesByUID(startUid, endUid);
-        logger.info("Trovati " + messages.length + " nuovi messaggi da processare.");
-      } else {
-        logger.info("Nessun nuovo messaggio da processare.");
-        messages = new Message[0];
-      }
-
-      // Itera sui messaggi e applica le regole
-      for (val message : messages) {
-        for (val rule : rules) {
-          if (rule.evaluate(message)) {
+        val messages = uidFolder.getMessagesByUID(startUid, endUid);
+        logger.info(String.format("Trovati %s nuovi messaggi da processare.", messages.length));
+        for (val message : messages) {
+          for (val rule : rules) {
+            if (!Objects.equals(rule.getImapConfigName(), imap.getName())) continue;
+            if (!rule.evaluate(message)) continue;
             rule.apply(message, folder, store);
-            break; // la prima regola interrompe l'esecuzione delle successive
+            break;
           }
         }
-      }
-
-      // Salva il nuovo stato
-      if (messages.length > 0) {
-        val newLastUid = uidFolder.getUID(messages[messages.length - 1]);
-        val newState = new State();
-        newState.setUidValidity(currentUidValidity);
-        newState.setLastProcessedUid(newLastUid);
-        saveState(newState);
-        logger.info("Nuovo stato salvato. Ultimo UID processato: " + newLastUid);
+        if (messages.length > 0) {
+          val newLastUid = uidFolder.getUID(messages[messages.length - 1]);
+          state.setUidValidity(currentUidValidity);
+          state.setLastProcessedUid(newLastUid);
+          logger.info(String.format("Aggiornato stato: lastUID=%s", newLastUid));
+        }
+      } else {
+        // anche qui aggiorna l'uidValidity per consolidare lo stato del server
+        state.setUidValidity(currentUidValidity);
+        logger.info("Nessun nuovo messaggio.");
       }
 
       // Espelli i messaggi eliminati e chiudi (gestito da @Cleanup)
@@ -236,24 +261,18 @@ public class MailManager {
   }
 
   // Metodo per salvare la configurazione IMAP su JSON
-  public void saveImapConfig() {
-    val configFile = FileSystemUtils.getConfigFile(IMAP_CONFIG_FILE);
+  public void saveImaps() {
+    val configFile = FileSystemUtils.getConfigFile(IMAPS_FILE);
     try {
       @Cleanup val writer = new FileWriter(configFile);
-      gson.toJson(imapConfig, writer);
-      logger.info("Salvata configurazione IMAP su " + configFile.getAbsolutePath());
+      gson.toJson(imaps, writer);
+      logger.info(String.format("Salvata configurazione IMAP su ", configFile.getAbsolutePath()));
     } catch (IOException e) {
       logger.severe(
-          "Errore durante il salvataggio della configurazione IMAP in "
-              + configFile.getAbsolutePath()
-              + ": "
-              + e.getMessage());
+          String.format(
+              "Errore durante il salvataggio della configurazione IMAP in %s: %s",
+              configFile.getAbsolutePath(), e.getMessage()));
     }
-  }
-
-  public void saveImapConfig(@NonNull final ImapConfig imapConfig) {
-    this.imapConfig = imapConfig;
-    saveImapConfig();
   }
 
   // Metodo per salvare regole su JSON
@@ -265,10 +284,29 @@ public class MailManager {
       logger.info("Salvate " + rules.size() + " regole su " + rulesFile.getAbsolutePath());
     } catch (IOException e) {
       logger.severe(
-          "Errore durante il salvataggio delle regole in "
-              + rulesFile.getAbsolutePath()
-              + ": "
-              + e.getMessage());
+          String.format(
+              "Errore durante il salvataggio delle regole in %s: %s",
+              rulesFile.getAbsolutePath(), e.getMessage()));
     }
+  }
+
+  private void saveStates() {
+    val stateFile = FileSystemUtils.getConfigFile(STATES_FILE);
+    try {
+      @Cleanup val writer = new FileWriter(stateFile);
+      gson.toJson(states, writer);
+    } catch (IOException e) {
+      logger.severe(
+          String.format(
+              "Errore durante il salvataggio del file di stato in %s: %s",
+              stateFile.getAbsolutePath(), e.getMessage()));
+    }
+  }
+
+  private State getState(@NonNull final String imapName) {
+    for (val state : states) {
+      if (Objects.equals(state.getImapConfigName(), imapName)) return state;
+    }
+    return null;
   }
 }

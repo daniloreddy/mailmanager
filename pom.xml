@@ -24,14 +24,34 @@
     <lanterna.version>3.1.2</lanterna.version>
     <javax.mail.version>1.6.2</javax.mail.version>
     <jsoup.version>1.17.2</jsoup.version>
+    <jakarta.mail.version>2.0.2</jakarta.mail.version>
+    <jakarta.activation.version>2.0.1</jakarta.activation.version>
   </properties>
 
   <dependencies>
+
     <dependency>
+      <groupId>com.sun.mail</groupId>
+      <artifactId>mailapi</artifactId>
+      <version>${jakarta.mail.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.sun.mail</groupId>
+      <artifactId>imap</artifactId>
+      <version>${jakarta.mail.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.sun.activation</groupId>
+      <artifactId>jakarta.activation</artifactId>
+      <version>${jakarta.activation.version}</version>
+    </dependency>
+
+    <!-- dependency>
       <groupId>com.sun.mail</groupId>
       <artifactId>javax.mail</artifactId>
       <version>${javax.mail.version}</version>
-    </dependency>
+    </dependency -->
 
     <dependency>
       <groupId>com.googlecode.lanterna</groupId>
@@ -111,6 +131,24 @@
                 </transformer>
                 <!-- Unisce META-INF/services/* se presenti -->
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+
+                <!-- JavaMail text resources (important!) -->
+                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/javamail.providers</resource>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/javamail.address.map</resource>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/javamail.default.providers</resource>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/javamail.default.address.map</resource>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                  <resource>META-INF/mailcap</resource>
+                </transformer>
+
               </transformers>
 
               <!-- Rimuovi firme -->

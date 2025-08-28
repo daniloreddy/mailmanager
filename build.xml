@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="main" default="TUI">
+
+    <target name="format" description="Formats all Java files in the src directory">
+        <property name="src.dir" location="src"/>
+        <property name="formatter.jar" location="google-java-format-1.28.0-all-deps.jar"/>
+        <echo message="Starting Google Java Format..."/>
+        <apply executable="java" failonerror="true" parallel="false">
+            <arg value="-jar"/>
+            <arg value="${formatter.jar}"/>
+            <arg value="--replace"/>
+            <fileset dir="${src.dir}">
+                <include name="**/*.java"/>
+            </fileset>
+        </apply>
+        <echo message="Finished Google Java Format."/>
+    </target>
+
+    <!-- Per Windows: usa mvn.cmd, altrove mvn -->
+    <condition property="mvn.cmd" value="mvn.cmd" else="mvn">
+        <os family="windows"/>
+    </condition>
+
+    <!-- 1) Costruisci il fat-jar con Maven -->
+    <target name="package">
+        <exec executable="${mvn.cmd}" failonerror="true">
+            <arg value="-q"/>
+            <arg value="-DskipTests"/>
+            <arg value="clean"/>
+            <arg value="package"/>
+        </exec>
+    </target>
+
+    <!-- 2) Chiedi a Maven il finalName e calcola il path del JAR -->
+    <target name="resolve-jar" depends="package">
+        <exec executable="${mvn.cmd}" outputproperty="finalName" failonerror="true">
+            <arg value="-q"/>
+            <arg value="help:evaluate"/>
+            <arg value="-Dexpression=project.build.finalName"/>
+            <arg value="-DforceStdout"/>
+        </exec>
+        <property name="application.jar" value="target/${finalName}.jar"/>
+        <echo message="JAR rilevato: ${application.jar}"/>
+    </target>
+
+    <!-- 3) Esegui (TUI) -->
+    <target name="TUI" depends="resolve-jar" description="Runs the TUI">
+        <java jar="${application.jar}" fork="true" failonerror="true">
+            <arg value="-tui"/>
+            <jvmarg value="-Dfile.encoding=UTF-8"/>
+            <!-- opzionale: variabili d’ambiente -->
+            <!-- <env key="MAIL_PASSWORD" value="..."/> -->
+        </java>
+    </target>
+
+    <!-- Esegui modalità “process” senza -tui -->
+    <target name="run" depends="resolve-jar" description="Runs the processor">
+        <java jar="${application.jar}" fork="true" failonerror="true">
+            <jvmarg value="-Dfile.encoding=UTF-8"/>
+        </java>
+    </target>
+
+</project>
