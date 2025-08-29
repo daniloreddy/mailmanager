@@ -5,69 +5,84 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.Multipart;
 import jakarta.mail.Part;
 import jakarta.mail.internet.ContentType;
+import jakarta.mail.internet.MimeUtility;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.UnsupportedCharsetException;
+import java.util.Locale;
+import java.util.logging.Logger;
 import lombok.Cleanup;
 import lombok.NonNull;
+import lombok.experimental.UtilityClass;
 import lombok.val;
+import org.jsoup.Jsoup;
 
+@UtilityClass
 public final class MailTextExtractor {
 
-  private static String cleanText(final String text) {
-    if (text == null) return "";
-    return text.replace('\u00A0', ' ') // nbsp → spazio normale
-        .replaceAll("\\R+", " ") // qualunque newline → spazio
-        .replaceAll("[\\t\\x0B\\f ]{2,}", " ") // compatta whitespace orizzontale ripetuto
-        .trim();
+  private static final Logger LOG = Logger.getLogger(MailTextExtractor.class.getName());
+
+  static {
+    LogConfigurator.configLog(LOG);
   }
 
-  private static Charset detectCharset(@NonNull final Part part) {
+  /** Hard cap to avoid unbounded memory when parsing pathological emails. */
+  private static final int MAX_OUTPUT_CHARS = 200_000;
+
+  public static String extractTextFromMessage(final Message msg) {
+    val sb = new StringBuilder(4096);
     try {
-      val ct = part.getContentType();
-      if (ct != null) {
-        val contentType = new ContentType(ct);
-        val cs = contentType.getParameter("charset");
-        if (cs != null) {
-          try {
-            return Charset.forName(cs);
-          } catch (Exception ignored) {
-          }
-        }
-      }
-    } catch (MessagingException ignored) {
+      extractPart(msg, sb);
+    } catch (Exception ex) {
+      LangUtils.debug(LOG, "extractTextFromMessage failed softly", ex);
     }
-    return StandardCharsets.UTF_8; // default ragionevole
+    val out = trimToMax(sb.toString().trim(), MAX_OUTPUT_CHARS);
+    return out;
   }
 
   private static void extractPart(final Part part, @NonNull final StringBuilder out)
       throws Exception {
-
     if (part == null) return;
 
-    // Salta allegati
-    if (isAttachment(part)) return;
+    // Skip binary/inline resources (images, pdf, etc.)
+    if (isSkippableBinary(part)) return;
 
     if (part.isMimeType("text/plain")) {
       val txt = getTextPayload(part);
-      if (!LangUtils.emptyString(txt)) out.append(cleanText(txt)).append("\n\n");
+      if (!LangUtils.emptyString(txt)) appendParagraph(out, cleanText(txt));
       return;
     }
 
     if (part.isMimeType("text/html")) {
       val html = getTextPayload(part);
-      if (!LangUtils.emptyString(html)) out.append(htmlToPlainText(html)).append("\n\n");
+      if (!LangUtils.emptyString(html)) appendParagraph(out, htmlToPlainText(html));
       return;
     }
 
     if (part.isMimeType("multipart/alternative")) {
-      // Scegli la versione migliore
       val content = part.getContent();
       if (content instanceof Multipart mp) {
         val best = pickFromAlternative(mp);
-        if (!LangUtils.emptyString(best)) out.append(best).append("\n\n");
+        if (!LangUtils.emptyString(best)) appendParagraph(out, best);
+      }
+      return;
+    }
+
+    if (part.isMimeType("multipart/related")) {
+      // Usually HTML + inline images. Extract the best textual child.
+      val content = part.getContent();
+      if (content instanceof Multipart mp) {
+        for (int i = 0; i < mp.getCount(); i++) {
+          val bp = mp.getBodyPart(i);
+          if (bp.isMimeType("text/html") || bp.isMimeType("text/plain")) {
+            extractPart(bp, out);
+            break; // first textual wins
+          }
+        }
       }
       return;
     }
@@ -75,12 +90,11 @@ public final class MailTextExtractor {
     if (part.isMimeType("multipart/*")) {
       val content = part.getContent();
       if (content instanceof Multipart mp) {
-        val count = mp.getCount();
-        for (int i = 0; i < count; i++) {
-          val bp = mp.getBodyPart(i);
+        for (int i = 0; i < mp.getCount(); i++) {
           try {
-            extractPart(bp, out);
-          } catch (Exception ignored) {
+            extractPart(mp.getBodyPart(i), out);
+          } catch (Exception ex) {
+            LangUtils.debug(LOG, "Skipping subpart on error", ex);
           }
         }
       }
@@ -92,79 +106,128 @@ public final class MailTextExtractor {
       if (content instanceof Message nested) {
         extractPart(nested, out);
       }
+      return;
     }
-    // Altri tipi testo meno comuni (opzionale)
-    else if (part.isMimeType("text/*")) {
+
+    // Fallback for rare textual types
+    if (part.isMimeType("text/*")) {
       val txt = getTextPayload(part);
-      if (!LangUtils.emptyString(txt)) out.append(cleanText(txt)).append("\n\n");
+      if (!LangUtils.emptyString(txt)) appendParagraph(out, cleanText(txt));
     }
-    // tutto il resto viene ignorato (immagini, pdf, ecc.)
   }
 
-  public static String extractTextFromMessage(final Message msg) {
-    val sb = new StringBuilder(2048);
+  /* =================== Helpers =================== */
+
+  private static void appendParagraph(StringBuilder out, String text) {
+    if (LangUtils.emptyString(text)) return;
+    if (out.length() > 0 && out.charAt(out.length() - 1) != '\n') out.append('\n');
+    out.append(text).append("\n\n");
+  }
+
+  private static String cleanText(final String text) {
+    if (text == null) return "";
+    // Collapse NBSP and excessive whitespace/newlines
+    return text.replace('\u00A0', ' ')
+        .replaceAll("\\R+", "\n")
+        .replaceAll("[\\t\\x0B\\f ]{2,}", " ")
+        .trim();
+  }
+
+  private static Charset detectCharset(@NonNull final Part part) {
     try {
-      extractPart(msg, sb);
-    } catch (Exception ignored) {
+      val ct = part.getContentType();
+      if (ct != null) {
+        val contentType = new ContentType(ct);
+        val cs = contentType.getParameter("charset");
+        if (cs != null) {
+          try {
+            // Normalize common weird labels (e.g., utf8, cp-1252, etc.)
+            String norm = cs.trim().toLowerCase(Locale.ROOT).replace("_", "-");
+            if ("utf8".equals(norm)) norm = "utf-8";
+            return Charset.forName(norm);
+          } catch (IllegalCharsetNameException | UnsupportedCharsetException __) {
+            LangUtils.debug(LOG, "Unsupported charset '{}', falling back to UTF-8", cs);
+          }
+        }
+      }
+    } catch (MessagingException __) {
     }
-    return sb.toString().trim();
+    return StandardCharsets.UTF_8;
   }
 
   private static String getTextPayload(@NonNull final Part part) {
     try {
-      val content = part.getContent();
+      val content = part.getContent(); // Jakarta Mail decodes transfer-encoding (QP/Base64)
       if (content instanceof String s) return s;
-      // In casi rari può essere InputStream
 
-      try (InputStream is = part.getInputStream()) {
-        return readAll(is, detectCharset(part));
-      }
-    } catch (Exception ignored) {
+      @Cleanup val is = part.getInputStream();
+      return readAll(is, detectCharset(part));
+    } catch (Exception ex) {
+      LangUtils.debug(LOG, "getTextPayload failed softly", ex);
     }
     return "";
   }
 
   private static String htmlToPlainText(final String html) {
-    // versione “semplice”: testo monolinea
-    // se vuoi preservare i newline logici, usa la versione estesa proposta in precedenza
-    org.jsoup.nodes.Document doc = org.jsoup.Jsoup.parse(html);
-    return cleanText(doc.text());
+    if (LangUtils.emptyString(html)) return "";
+    val doc = Jsoup.parse(html);
+    // Preserve logical breaks before extracting text
+    doc.select("br").append("\\n");
+    doc.select("p, li, div, tr, h1, h2, h3, h4, h5, h6").prepend("\\n");
+    val text = doc.text().replace("\\n", "\n");
+    return cleanText(text);
   }
 
-  private static boolean isAttachment(@NonNull final Part p) {
-    try {
-      val disp = p.getDisposition();
-      if (!LangUtils.emptyString(disp) && disp.equalsIgnoreCase(Part.ATTACHMENT)) return true;
-      // consideriamo attachment anche se c'è un filename
-      if (!LangUtils.emptyString(p.getFileName())) return true;
-    } catch (MessagingException ignored) {
-    }
-    return false;
-  }
-
+  /**
+   * Heuristic: in multipart/alternative the *last* part is usually the richest. We scan from last
+   * to first preferring text/html, then text/plain, then any text/*.
+   */
   private static String pickFromAlternative(@NonNull final Multipart mp) throws Exception {
-    // 1) prova text/plain
-    for (int i = 0; i < mp.getCount(); i++) {
+    // Prefer text/html scanning from last to first
+    for (int i = mp.getCount() - 1; i >= 0; i--) {
       val bp = mp.getBodyPart(i);
-      if (!isAttachment(bp) && bp.isMimeType("text/plain")) {
-        return cleanText(getTextPayload(bp));
-      }
-    }
-    // 2) fallback text/html
-    for (int i = 0; i < mp.getCount(); i++) {
-      val bp = mp.getBodyPart(i);
-      if (!isAttachment(bp) && bp.isMimeType("text/html")) {
+      if (!isSkippableBinary(bp) && bp.isMimeType("text/html")) {
         return htmlToPlainText(getTextPayload(bp));
       }
     }
-    // 3) ultima spiaggia: qualsiasi text/*
-    for (int i = 0; i < mp.getCount(); i++) {
+    // Then text/plain
+    for (int i = mp.getCount() - 1; i >= 0; i--) {
       val bp = mp.getBodyPart(i);
-      if (!isAttachment(bp) && bp.isMimeType("text/*")) {
+      if (!isSkippableBinary(bp) && bp.isMimeType("text/plain")) {
+        return cleanText(getTextPayload(bp));
+      }
+    }
+    // Finally any text/*
+    for (int i = mp.getCount() - 1; i >= 0; i--) {
+      val bp = mp.getBodyPart(i);
+      if (!isSkippableBinary(bp) && bp.isMimeType("text/*")) {
         return cleanText(getTextPayload(bp));
       }
     }
     return "";
+  }
+
+  /** Decide if a part is a non-text resource we want to skip (attachments, inline images, etc.). */
+  private static boolean isSkippableBinary(@NonNull final Part p) {
+    try {
+      // Explicit attachments
+      val disp = p.getDisposition();
+      if (disp != null && disp.equalsIgnoreCase(Part.ATTACHMENT)) return true;
+
+      // Inline with filename & non-text content -> likely an embedded resource (image/pdf/etc.)
+      val filename = p.getFileName();
+      val hasFileName = !LangUtils.emptyString(filename);
+      val isTextish = p.isMimeType("text/*") || p.isMimeType("message/*");
+      if (hasFileName && !isTextish) return true;
+
+      // Content-ID usually marks inline resources (cid:), skip when not text
+      val cids = p.getHeader("Content-ID");
+      if (cids != null && cids.length > 0 && !isTextish) return true;
+
+      return false;
+    } catch (MessagingException __) {
+      return false;
+    }
   }
 
   private static String readAll(@NonNull final InputStream is, @NonNull final Charset cs)
@@ -174,5 +237,21 @@ public final class MailTextExtractor {
     int r;
     while ((r = is.read(buf)) != -1) bos.write(buf, 0, r);
     return bos.toString(cs);
+  }
+
+  private static String trimToMax(final String s, final int max) {
+    if (s == null || s.length() <= max) return s == null ? "" : s;
+    return s.substring(0, max);
+  }
+
+  /** Decodifica un subject RFC 2047 in UTF-8, safe. */
+  public static String decodeSubjectSafe(final String raw) {
+    if (LangUtils.emptyString(raw)) return "";
+    try {
+      return cleanText(MimeUtility.decodeText(raw));
+    } catch (Exception e) {
+      // Fallback best-effort
+      return cleanText(raw);
+    }
   }
 }

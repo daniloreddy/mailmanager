@@ -1,23 +1,11 @@
 package org.danilorossi.mailmanager.model;
 
 import com.sun.mail.imap.IMAPFolder;
-import jakarta.mail.Address;
-import jakarta.mail.Flags;
-import jakarta.mail.Folder;
-import jakarta.mail.Message;
-import jakarta.mail.MessagingException;
-import jakarta.mail.Multipart;
-import jakarta.mail.Store;
+import jakarta.mail.*;
 import java.io.IOException;
-import java.util.Locale;
 import java.util.logging.Logger;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.NonNull;
-import lombok.val;
+import lombok.*;
+import org.danilorossi.mailmanager.helpers.LangUtils;
 import org.danilorossi.mailmanager.helpers.LogConfigurator;
 import org.danilorossi.mailmanager.helpers.MailTextExtractor;
 
@@ -28,27 +16,28 @@ import org.danilorossi.mailmanager.helpers.MailTextExtractor;
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Rule {
 
-  private static final Logger logger = Logger.getLogger(Rule.class.getName());
+  private static final Logger LOG = Logger.getLogger(Rule.class.getName());
 
   static {
-    LogConfigurator.configLog(logger);
+    LogConfigurator.configLog(LOG);
   }
 
   @EqualsAndHashCode.Include @NonNull
-  private String imapConfigName; // Nome della configurazione IMAP a cui si applica la regola
+  private String imapConfigName; // Nome configurazione IMAP a cui si applica
 
-  @EqualsAndHashCode.Include @NonNull private ActionType actionType; // Tipo di azione da eseguire
+  @EqualsAndHashCode.Include @NonNull private ActionType actionType; // Azione da eseguire
+
+  @EqualsAndHashCode.Include @NonNull private ConditionOperator conditionOperator; // Operatore
 
   @EqualsAndHashCode.Include @NonNull
-  private ConditionOperator conditionOperator; // Operatore di confronto
+  private ConditionSubject conditionSubject; // Campo del messaggio
 
-  @EqualsAndHashCode.Include @NonNull
-  private ConditionSubject conditionSubject; // Soggetto della condizione
+  @NonNull @Builder.Default private String conditionValue = ""; // Valore di confronto
 
-  @NonNull private String conditionValue; // Valore della condizione
-  private String destValue; // Valore di destinazione (es. nome cartella)
+  @Builder.Default private String destValue = ""; // Es. cartella di destinazione
 
-  // Esegue l'azione sul messaggio
+  @Builder.Default private boolean caseSensitive = false; // Confronti case-insensitive per default
+
   public void apply(
       @NonNull final Message message,
       @NonNull final Folder sourceFolder,
@@ -56,136 +45,120 @@ public class Rule {
       throws MessagingException {
 
     switch (actionType) {
-      case MOVE:
-        val moveTarget = store.getFolder(destValue);
-        if (!moveTarget.exists()) {
-          logger.severe(
-              String.format(
-                  "Errore: Cartella di destinazione '%s' non esiste. Regola ignorata.", destValue));
+      case MOVE -> {
+        if (LangUtils.emptyString(destValue)) {
+          LangUtils.warn(LOG, "MOVE senza destValue: regola ignorata");
           return;
         }
+        Folder target = store.getFolder(destValue);
+        if (target == null || !target.exists()) {
+          LangUtils.warn(LOG, "Cartella destinazione inesistente: {}", destValue);
+          return;
+        }
+        // READ_WRITE per eliminare dalla sorgente
+        ensureOpenRW(sourceFolder);
+        ensureOpenRW(target);
 
-        if (sourceFolder instanceof IMAPFolder imapSrc) {
-          // server-side MOVE (se supportato)
-          imapSrc.moveMessages(new Message[] {message}, moveTarget);
+        if (sourceFolder instanceof IMAPFolder imapSrc && target instanceof IMAPFolder imapDst) {
+          imapSrc.moveMessages(new Message[] {message}, imapDst);
         } else {
-          sourceFolder.copyMessages(new Message[] {message}, moveTarget); // fallback
+          // fallback: COPY + DELETE
+          sourceFolder.copyMessages(new Message[] {message}, target);
           message.setFlag(Flags.Flag.DELETED, true);
         }
-        logger.info(String.format("Messaggio spostato in %s: %s", destValue, message.getSubject()));
-        break;
+        LangUtils.info(LOG, "Spostato in {}:{}", destValue, safeSubject(message));
+      }
 
-      case COPY:
-        val copyTarget = store.getFolder(destValue);
-        if (!copyTarget.exists()) {
-          logger.severe(
-              String.format(
-                  "Errore: Cartella di destinazione '%s' non esiste. Regola ignorata.", destValue));
+      case COPY -> {
+        if (LangUtils.emptyString(destValue)) {
+          LangUtils.warn(LOG, "COPY senza destValue: regola ignorata");
           return;
         }
-        sourceFolder.copyMessages(new Message[] {message}, copyTarget);
-        logger.info(String.format("Messaggio copiato in %s: %s", destValue, message.getSubject()));
-        break;
+        Folder target = store.getFolder(destValue);
+        if (target == null || !target.exists()) {
+          LangUtils.warn(LOG, "Cartella destinazione inesistente: {}", destValue);
+          return;
+        }
+        ensureOpenRO(sourceFolder);
+        ensureOpenRO(target); // per alcuni provider non serve, ma non fa male
+        sourceFolder.copyMessages(new Message[] {message}, target);
+        LangUtils.info(LOG, "Copiato in {}: {}", destValue, safeSubject(message));
+      }
 
-      case DELETE:
+      case DELETE -> {
+        ensureOpenRW(sourceFolder);
         message.setFlag(Flags.Flag.DELETED, true);
-        logger.info(String.format("Messaggio eliminato: %s", message.getSubject()));
-        break;
+        LangUtils.info(LOG, "Eliminato: {}", safeSubject(message));
+      }
     }
   }
 
-  // Valuta se il messaggio soddisfa la condizione
   public boolean evaluate(@NonNull final Message message) throws MessagingException {
+    final String left = LangUtils.normalize(getValueToCheck(message));
+    final String right = LangUtils.normalize(conditionValue);
 
-    val valueToCheck = getValueToCheck(message);
-    if (valueToCheck == null) return false;
+    return conditionOperator.test(left, right, caseSensitive);
+  }
 
-    switch (conditionOperator) {
-      case EQUALS:
-        return valueToCheck
-            .toLowerCase(Locale.ROOT)
-            .contains(String.valueOf(conditionValue).toLowerCase(Locale.ROOT));
-      case NOT_EQUALS:
-        return !valueToCheck
-            .toLowerCase(Locale.ROOT)
-            .contains(String.valueOf(conditionValue).toLowerCase(Locale.ROOT));
-      case CONTAINS:
-        return valueToCheck
-            .toLowerCase(Locale.ROOT)
-            .contains(String.valueOf(conditionValue).toLowerCase(Locale.ROOT));
-      case NOT_CONTAINS:
-        return !valueToCheck
-            .toLowerCase(Locale.ROOT)
-            .contains(String.valueOf(conditionValue).toLowerCase(Locale.ROOT));
-      default:
-        return false;
+  private static String safeSubject(Message m) {
+    try {
+      return String.valueOf(m.getSubject());
+    } catch (MessagingException e) {
+      return "(no-subject)";
     }
   }
 
-  // recupera gli indirizzi e li concatena in una stringa
-  private String catAddresses(final Address[] addresses) {
-    if (addresses == null) return "";
+  private static void ensureOpenRO(Folder f) throws MessagingException {
+    if (!f.isOpen()) f.open(Folder.READ_ONLY);
+  }
 
-    val builder = new StringBuilder();
-    for (val address : addresses) {
-      if (address == null) continue;
-      builder.append(address.toString());
-      builder.append(" ");
-    }
-    return builder.toString();
+  private static void ensureOpenRW(Folder f) throws MessagingException {
+    if (!f.isOpen() || f.getMode() != Folder.READ_WRITE) f.open(Folder.READ_WRITE);
   }
 
   // Estrae il valore da confrontare in base al soggetto
   private String getValueToCheck(@NonNull final Message message) throws MessagingException {
     try {
-      switch (conditionSubject) {
-        case SUBJECT:
-          return message.getSubject();
+      return switch (conditionSubject) {
+        case SUBJECT -> message.getSubject();
 
-        case FROM:
-          return catAddresses(message.getFrom());
+        case FROM -> catAddresses(message.getFrom());
+        case TO -> catAddresses(message.getRecipients(Message.RecipientType.TO));
+        case CC -> catAddresses(message.getRecipients(Message.RecipientType.CC));
+        case BCC ->
+            catAddresses(message.getRecipients(Message.RecipientType.BCC)); // nota: spesso assente
 
-        case TO:
-          return catAddresses(message.getRecipients(Message.RecipientType.TO));
-
-        case CC:
-          return catAddresses(message.getRecipients(Message.RecipientType.CC));
-
-        case CCN:
-          return catAddresses(message.getRecipients(Message.RecipientType.BCC));
-
-        case MESSAGE:
-          val content = message.getContent();
-          if (content instanceof String) {
-            return (String) content;
-          }
-
-          if (content instanceof Multipart) {
-            return MailTextExtractor.extractTextFromMessage(message);
-          }
-
-          return null;
-
-        default:
-          return null;
-      }
+        case MESSAGE -> {
+          Object content = message.getContent();
+          if (content instanceof String s) yield s;
+          if (content instanceof Multipart) yield MailTextExtractor.extractTextFromMessage(message);
+          yield "";
+        }
+      };
     } catch (IOException e) {
-      logger.severe(
-          String.format("Errore nella lettura del contenuto del messaggio: %s", e.getMessage()));
-      return null;
+      LangUtils.err(LOG, "Errore lettura contenuto messaggio: {}", LangUtils.exMsg(e));
+      return "";
     }
   }
 
-  // Rappresentazione stringa per ActionListBox
+  // Concatena indirizzi in stringa
+  private String catAddresses(final Address[] addresses) {
+    if (addresses == null || addresses.length == 0) return "";
+    StringBuilder sb = new StringBuilder();
+    for (Address a : addresses) {
+      if (a != null) sb.append(a.toString()).append(' ');
+    }
+    return sb.toString().trim();
+  }
+
   @Override
   public String toString() {
-    return conditionSubject
-        + " "
-        + conditionOperator
-        + " '"
-        + conditionValue
-        + "' -> "
-        + actionType
-        + (destValue != null ? " '" + destValue + "'" : "");
+    return LangUtils.s(
+        "{} {} '{}' -> {} '{}'",
+        conditionSubject,
+        conditionOperator,
+        conditionValue,
+        actionType,
+        (LangUtils.emptyString(destValue) ? "-" : destValue));
   }
 }

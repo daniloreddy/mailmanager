@@ -16,9 +16,11 @@ import jakarta.mail.Store;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Logger;
 import lombok.NonNull;
 import lombok.val;
 import org.danilorossi.mailmanager.helpers.LangUtils;
+import org.danilorossi.mailmanager.helpers.LogConfigurator;
 import org.danilorossi.mailmanager.model.ActionType;
 import org.danilorossi.mailmanager.model.ConditionOperator;
 import org.danilorossi.mailmanager.model.ConditionSubject;
@@ -27,26 +29,28 @@ import org.danilorossi.mailmanager.model.Rule;
 
 public class ConsoleTUI {
 
+  private static final Logger LOG = Logger.getLogger(ConsoleTUI.class.getName());
+
+  static {
+    LogConfigurator.configLog(LOG);
+    LogConfigurator.redirectSystemStreams(LOG);
+  }
+
   enum ActiveTab {
     IMAPS,
     RULES
   }
 
   private final MailManager mailManager;
-
   private Panel content;
   private Label footerHint;
-
   private Table<String> imapsTable;
   private Table<String> rulesTable;
-
   private ActiveTab tab = ActiveTab.IMAPS;
 
   public ConsoleTUI(@NonNull MailManager mailManager) {
     this.mailManager = mailManager;
   }
-
-  // ============================  IMAPS  ============================
 
   private Panel buildImapsPanel(@NonNull final MultiWindowTextGUI gui) {
     val panel = new Panel(new LinearLayout(Direction.VERTICAL));
@@ -72,6 +76,7 @@ public class ConsoleTUI {
                 mailManager.getImaps().add(cfg);
                 mailManager.saveImaps();
                 refreshImapsTable(table);
+                table.takeFocus();
               }
             }));
     actions.addComponent(new EmptySpace(new TerminalSize(1, 1)));
@@ -85,7 +90,7 @@ public class ConsoleTUI {
     return panel;
   }
 
-  private void editSelectedImap(MultiWindowTextGUI gui) {
+  private void editSelectedImap(@NonNull final MultiWindowTextGUI gui) {
     if (imapsTable == null) return;
     val sel = imapsTable.getSelectedRow();
     if (sel < 0 || sel >= mailManager.getImaps().size()) {
@@ -102,7 +107,7 @@ public class ConsoleTUI {
     }
   }
 
-  private void delSelectedImap(MultiWindowTextGUI gui) {
+  private void delSelectedImap(@NonNull final MultiWindowTextGUI gui) {
     if (imapsTable == null) return;
     if (mailManager.getImaps().isEmpty()) {
       MessageDialog.showMessageDialog(
@@ -115,15 +120,15 @@ public class ConsoleTUI {
       return;
     }
     // avvisa se ci sono regole che puntano a quel server
-    String name = mailManager.getImaps().get(sel).getName();
-    boolean usedInRules =
+    val name = mailManager.getImaps().get(sel).getName();
+    val usedInRules =
         mailManager.getRules().stream().anyMatch(r -> Objects.equals(r.getImapConfigName(), name));
     if (usedInRules) {
       val btn =
           MessageDialog.showMessageDialog(
               gui,
               "Attenzione",
-              "Ci sono regole associate a \"" + name + "\".\nEliminare comunque?",
+              LangUtils.s("Ci sono regole associate a \"{}\".\nEliminare comunque?", name),
               MessageDialogButton.Yes,
               MessageDialogButton.No);
       if (btn != MessageDialogButton.Yes) return;
@@ -140,9 +145,10 @@ public class ConsoleTUI {
     mailManager.getImaps().remove(sel);
     mailManager.saveImaps();
     refreshImapsTable(imapsTable);
+    imapsTable.takeFocus();
   }
 
-  private void testSelectedImap(MultiWindowTextGUI gui) {
+  private void testSelectedImap(@NonNull final MultiWindowTextGUI gui) {
     if (imapsTable == null) return;
     val sel = imapsTable.getSelectedRow();
     if (sel < 0 || sel >= mailManager.getImaps().size()) {
@@ -157,9 +163,10 @@ public class ConsoleTUI {
     } else {
       MessageDialog.showMessageDialog(gui, "Errore", err, MessageDialogButton.OK);
     }
+    imapsTable.takeFocus();
   }
 
-  private void refreshImapsTable(Table<String> table) {
+  private void refreshImapsTable(@NonNull final Table<String> table) {
     val prev = table.getSelectedRow();
     table.getTableModel().clear();
     val imaps = mailManager.getImaps();
@@ -234,8 +241,13 @@ public class ConsoleTUI {
                       .inboxFolder(
                           tbInbox.getText().trim().isEmpty() ? "INBOX" : tbInbox.getText().trim())
                       .build();
-              val folders = fetchImapFolders(gui, tmp);
+              val folders = fetchImapFolders(gui, tmp); // operazione bloccante
               if (folders == null) return;
+              if (folders.isEmpty()) {
+                MessageDialog.showMessageDialog(
+                    gui, "Info", "Nessuna cartella messaggi trovata.", MessageDialogButton.OK);
+                return;
+              }
               val chosen = chooseFromList(gui, "Seleziona cartella", folders, tbInbox.getText());
               if (chosen != null) tbInbox.setText(chosen);
             }));
@@ -276,7 +288,7 @@ public class ConsoleTUI {
               val port = tbPort.getText().trim();
               val user = tbUser.getText().trim();
               val pass = tbPass.getText(); // può essere vuota
-              val inbox = tbInbox.getText().trim();
+              val inbox = tbInbox.getText().trim().isEmpty() ? "INBOX" : tbInbox.getText().trim();
 
               if (LangUtils.emptyString(name)
                   || LangUtils.emptyString(host)
@@ -299,7 +311,7 @@ public class ConsoleTUI {
                 return;
               }
               // univocità nome
-              boolean nameTaken =
+              val nameTaken =
                   mailManager.getImaps().stream()
                       .anyMatch(
                           c -> !Objects.equals(existing, c) && Objects.equals(name, c.getName()));
@@ -355,11 +367,20 @@ public class ConsoleTUI {
         new Button(
             "Aggiungi",
             () -> {
+              if (mailManager.getImaps().isEmpty()) {
+                MessageDialog.showMessageDialog(
+                    gui,
+                    "Info",
+                    "Configura almeno un server IMAP prima di creare regole.",
+                    MessageDialogButton.OK);
+                return;
+              }
               val r = openRuleDialog(gui, null);
               if (r != null) {
                 mailManager.getRules().add(r);
                 mailManager.saveRules();
                 refreshRulesTable(table);
+                table.takeFocus();
               }
             }));
     actions.addComponent(new EmptySpace(new TerminalSize(1, 1)));
@@ -371,7 +392,7 @@ public class ConsoleTUI {
     return panel;
   }
 
-  private void editSelectedRule(MultiWindowTextGUI gui) {
+  private void editSelectedRule(@NonNull final MultiWindowTextGUI gui) {
     if (rulesTable == null) return;
     int sel = rulesTable.getSelectedRow();
     if (sel < 0 || sel >= mailManager.getRules().size()) {
@@ -409,10 +430,11 @@ public class ConsoleTUI {
       mailManager.getRules().remove(sel);
       mailManager.saveRules();
       refreshRulesTable(rulesTable);
+      rulesTable.takeFocus();
     }
   }
 
-  private void refreshRulesTable(Table<String> table) {
+  private void refreshRulesTable(@NonNull final Table<String> table) {
     int prev = table.getSelectedRow();
     table.getTableModel().clear();
     val rules = mailManager.getRules();
@@ -442,6 +464,16 @@ public class ConsoleTUI {
     val root = new Panel(new GridLayout(2));
     root.setPreferredSize(new TerminalSize(100, 14));
 
+    // Se non ci sono IMAP, blocca (ulteriore safety, oltre al bottone Aggiungi)
+    if (mailManager.getImaps().isEmpty()) {
+      MessageDialog.showMessageDialog(
+          gui,
+          "Info",
+          "Configura almeno un server IMAP prima di creare regole.",
+          MessageDialogButton.OK);
+      return null;
+    }
+
     // IMAP name combo
     val imapNames = new ArrayList<String>();
     for (ImapConfig c : mailManager.getImaps()) imapNames.add(c.getName());
@@ -468,8 +500,13 @@ public class ConsoleTUI {
                     gui, "Info", "Seleziona prima un server IMAP.", MessageDialogButton.OK);
                 return;
               }
-              val folders = fetchImapFolders(gui, cfg);
+              val folders = fetchImapFolders(gui, cfg); // operazione bloccante
               if (folders == null) return;
+              if (folders.isEmpty()) {
+                MessageDialog.showMessageDialog(
+                    gui, "Info", "Nessuna cartella messaggi trovata.", MessageDialogButton.OK);
+                return;
+              }
               val chosen = chooseFromList(gui, "Seleziona cartella", folders, tbDest.getText());
               if (chosen != null) tbDest.setText(chosen);
             });
@@ -573,7 +610,8 @@ public class ConsoleTUI {
 
   // ============================  COMMON  ============================
 
-  private List<String> fetchImapFolders(MultiWindowTextGUI gui, ImapConfig cfg) {
+  private List<String> fetchImapFolders(
+      @NonNull final MultiWindowTextGUI gui, @NonNull final ImapConfig cfg) {
     try {
       Properties props = cfg.toProperties();
       Session sess = Session.getInstance(props);
@@ -584,20 +622,21 @@ public class ConsoleTUI {
         for (Folder f : def.list("*")) {
           if ((f.getType() & Folder.HOLDS_MESSAGES) != 0) out.add(f.getFullName());
         }
-        if (out.isEmpty()) {
-          MessageDialog.showMessageDialog(
-              gui, "Info", "Nessuna cartella messaggi trovata.", MessageDialogButton.OK);
-        }
         return out;
       }
     } catch (MessagingException ex) {
-      MessageDialog.showMessageDialog(gui, "Errore IMAP", rootCauseMsg(ex), MessageDialogButton.OK);
+      MessageDialog.showMessageDialog(
+          gui, "Errore IMAP", LangUtils.rootCauseMsg(ex), MessageDialogButton.OK);
       return null;
     }
   }
 
   private String chooseFromList(
-      MultiWindowTextGUI gui, String title, List<String> items, String preselect) {
+      @NonNull final MultiWindowTextGUI gui,
+      @NonNull final String title,
+      @NonNull final List<String> items,
+      final String preselect) {
+
     val dialog = new BasicWindow(title);
     dialog.setHints(List.of(Window.Hint.CENTERED, Window.Hint.MODAL));
     dialog.setCloseWindowWithEscape(true);
@@ -636,8 +675,8 @@ public class ConsoleTUI {
 
   private boolean isPositiveInt(String s) {
     try {
-      return Integer.parseInt(s) > 0;
-    } catch (NumberFormatException e) {
+      return Integer.parseInt(s.trim()) > 0;
+    } catch (Exception e) {
       return false;
     }
   }
@@ -646,21 +685,16 @@ public class ConsoleTUI {
     return s == null ? "" : s;
   }
 
-  private String rootCauseMsg(@NonNull Throwable t) {
-    while (t.getCause() != null) t = t.getCause();
-    return t.getMessage() == null ? t.toString() : t.getMessage();
-  }
-
   private String tryTestImap(
       @NonNull String host, @NonNull String port, @NonNull String user, @NonNull String pass) {
     try {
       val cfg =
           ImapConfig.builder()
               .name("test")
-              .host(host)
-              .port(port)
-              .username(user)
-              .password(pass)
+              .host(host.trim())
+              .port(port.trim())
+              .username(user.trim())
+              .password(pass) // non trimmo la password
               .inboxFolder("INBOX")
               .build();
       val props = cfg.toProperties();
@@ -670,13 +704,14 @@ public class ConsoleTUI {
       }
       return null;
     } catch (Exception ex) {
-      return rootCauseMsg(ex);
+      return LangUtils.rootCauseMsg(ex);
     }
   }
 
   // ============================  SHELL  ============================
 
   public void start() throws IOException {
+
     val terminalFactory = new DefaultTerminalFactory();
     val screen = terminalFactory.createScreen();
     try {
@@ -753,12 +788,20 @@ public class ConsoleTUI {
                       if (imapsTable != null) imapsTable.takeFocus();
                     }
                   } else if (tab == ActiveTab.RULES) {
-                    val r = openRuleDialog(gui, null);
-                    if (r != null) {
-                      mailManager.getRules().add(r);
-                      mailManager.saveRules();
-                      refreshRulesTable(rulesTable);
-                      if (rulesTable != null) rulesTable.takeFocus();
+                    if (mailManager.getImaps().isEmpty()) {
+                      MessageDialog.showMessageDialog(
+                          gui,
+                          "Info",
+                          "Configura almeno un server IMAP prima di creare regole.",
+                          MessageDialogButton.OK);
+                    } else {
+                      val r = openRuleDialog(gui, null);
+                      if (r != null) {
+                        mailManager.getRules().add(r);
+                        mailManager.saveRules();
+                        refreshRulesTable(rulesTable);
+                        if (rulesTable != null) rulesTable.takeFocus();
+                      }
                     }
                   }
                   handled.set(true);
