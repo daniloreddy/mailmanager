@@ -33,7 +33,7 @@ public class ConsoleTUI {
 
   static {
     LogConfigurator.configLog(LOG);
-    LogConfigurator.redirectSystemStreams(LOG);
+    //LogConfigurator.redirectSystemStreams(LOG);
   }
 
   enum ActiveTab {
