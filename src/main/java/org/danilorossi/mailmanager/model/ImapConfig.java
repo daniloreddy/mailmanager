@@ -18,6 +18,8 @@ import org.danilorossi.mailmanager.helpers.LangUtils;
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class ImapConfig {
 
+  @Builder.Default private boolean useSpamAssassin = false;
+
   @Builder.Default
   @ToString.Include(rank = 100)
   private String name = ""; // display name

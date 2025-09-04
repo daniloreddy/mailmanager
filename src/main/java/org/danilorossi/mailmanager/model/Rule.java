@@ -3,8 +3,8 @@ package org.danilorossi.mailmanager.model;
 import com.sun.mail.imap.IMAPFolder;
 import jakarta.mail.*;
 import java.io.IOException;
-import java.util.logging.Logger;
 import lombok.*;
+import lombok.extern.java.Log;
 import org.danilorossi.mailmanager.helpers.LangUtils;
 import org.danilorossi.mailmanager.helpers.LogConfigurator;
 import org.danilorossi.mailmanager.helpers.MailTextExtractor;
@@ -14,12 +14,11 @@ import org.danilorossi.mailmanager.helpers.MailTextExtractor;
 @Getter
 @Builder
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
+@Log
 public class Rule {
 
-  private static final Logger LOG = Logger.getLogger(Rule.class.getName());
-
   static {
-    LogConfigurator.configLog(LOG);
+    LogConfigurator.configLog(log);
   }
 
   @EqualsAndHashCode.Include @NonNull
@@ -47,12 +46,12 @@ public class Rule {
     switch (actionType) {
       case MOVE -> {
         if (LangUtils.emptyString(destValue)) {
-          LangUtils.warn(LOG, "MOVE senza destValue: regola ignorata");
+          LangUtils.warn(log, "MOVE senza destValue: regola ignorata");
           return;
         }
         Folder target = store.getFolder(destValue);
         if (target == null || !target.exists()) {
-          LangUtils.warn(LOG, "Cartella destinazione inesistente: {}", destValue);
+          LangUtils.warn(log, "Cartella destinazione inesistente: {}", destValue);
           return;
         }
         // READ_WRITE per eliminare dalla sorgente
@@ -66,29 +65,29 @@ public class Rule {
           sourceFolder.copyMessages(new Message[] {message}, target);
           message.setFlag(Flags.Flag.DELETED, true);
         }
-        LangUtils.info(LOG, "Spostato in {}:{}", destValue, safeSubject(message));
+        LangUtils.info(log, "Spostato in {}:{}", destValue, safeSubject(message));
       }
 
       case COPY -> {
         if (LangUtils.emptyString(destValue)) {
-          LangUtils.warn(LOG, "COPY senza destValue: regola ignorata");
+          LangUtils.warn(log, "COPY senza destValue: regola ignorata");
           return;
         }
         Folder target = store.getFolder(destValue);
         if (target == null || !target.exists()) {
-          LangUtils.warn(LOG, "Cartella destinazione inesistente: {}", destValue);
+          LangUtils.warn(log, "Cartella destinazione inesistente: {}", destValue);
           return;
         }
         ensureOpenRO(sourceFolder);
         ensureOpenRO(target); // per alcuni provider non serve, ma non fa male
         sourceFolder.copyMessages(new Message[] {message}, target);
-        LangUtils.info(LOG, "Copiato in {}: {}", destValue, safeSubject(message));
+        LangUtils.info(log, "Copiato in {}: {}", destValue, safeSubject(message));
       }
 
       case DELETE -> {
         ensureOpenRW(sourceFolder);
         message.setFlag(Flags.Flag.DELETED, true);
-        LangUtils.info(LOG, "Eliminato: {}", safeSubject(message));
+        LangUtils.info(log, "Eliminato: {}", safeSubject(message));
       }
     }
   }
@@ -136,7 +135,7 @@ public class Rule {
         }
       };
     } catch (IOException e) {
-      LangUtils.err(LOG, "Errore lettura contenuto messaggio: {}", LangUtils.exMsg(e));
+      LangUtils.err(log, "Errore lettura contenuto messaggio: {}", LangUtils.exMsg(e));
       return "";
     }
   }

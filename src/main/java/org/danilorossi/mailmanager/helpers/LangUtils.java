@@ -8,6 +8,26 @@ import lombok.experimental.UtilityClass;
 @UtilityClass
 public class LangUtils {
 
+  public static boolean isPositiveInt(@NonNull final String s) {
+    try {
+      return Integer.parseInt(s.trim()) > 0;
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
+  public static String nullToEmpty(final String s) {
+    return s == null ? "" : s;
+  }
+
+  public static int parseIntOr(final String s, final int def) {
+    try {
+      return Integer.parseInt(s == null ? "" : s.trim());
+    } catch (Exception ignored) {
+      return def;
+    }
+  }
+
   public static boolean emptyString(final String content) {
     return content == null || content.isBlank();
   }

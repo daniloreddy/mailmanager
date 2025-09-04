@@ -23,6 +23,7 @@ public class FileSystemUtils {
   private static final String DIR_DATA = "data";
 
   // Nomi standard dei 3 file di configurazione
+  private static final String SPASS_JSON = "spam-assassin.json";
   private static final String SERVERS_JSON = "imap-servers.json";
   private static final String RULES_JSON = "rules.json";
   private static final String OFFSETS_JSON = "processing-state.json";
@@ -47,6 +48,11 @@ public class FileSystemUtils {
 
     // 4) Fallback: CWD/data
     return ensureDir(cwd().resolve(DIR_DATA));
+  }
+
+  /** Path a imap-servers.json. */
+  public static Path getSpamAssassinJson() {
+    return getDataDir().resolve(SPASS_JSON);
   }
 
   /** Path a imap-servers.json. */
