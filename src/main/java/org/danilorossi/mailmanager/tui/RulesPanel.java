@@ -139,6 +139,10 @@ public class RulesPanel extends Panel {
     val dialog = new BasicWindow(existing == null ? "Aggiungi Regola" : "Modifica Regola");
     dialog.setHints(List.of(Window.Hint.CENTERED, Window.Hint.MODAL));
 
+    // fa sì che premendo ESC la finestra si chiuda
+    // equivalente al click su "Annulla"
+    dialog.setCloseWindowWithEscape(true);
+
     val root = new Panel(new GridLayout(2));
     root.setPreferredSize(new TerminalSize(100, 14));
 

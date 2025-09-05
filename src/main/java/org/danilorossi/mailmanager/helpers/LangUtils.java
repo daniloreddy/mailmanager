@@ -17,7 +17,11 @@ public class LangUtils {
   }
 
   public static String nullToEmpty(final String s) {
-    return s == null ? "" : s;
+    return nullToSomething(s, "");
+  }
+
+  public static String nullToSomething(final String s, final String def) {
+    return s == null ? "" : def;
   }
 
   public static int parseIntOr(final String s, final int def) {

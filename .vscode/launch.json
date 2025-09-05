@@ -1,0 +1,26 @@
+{
+    // Usare IntelliSense per informazioni sui possibili attributi.
+    // Al passaggio del mouse vengono visualizzate le descrizioni degli attributi esistenti.
+    // Per altre informazioni, visitare: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "SpamAssassinClient",
+            "request": "launch",
+            "mainClass": "org.danilorossi.mailmanager.spamassassin.SpamAssassinClient",
+            "projectName": "mailmanager"
+        },
+        {
+            "type": "java",
+            "name": "MailManager",
+            "request": "launch",
+            "mainClass": "org.danilorossi.mailmanager.MailManager",
+            "projectName": "mailmanager",
+            "env": {
+                "DEV": "true"
+            },
+            "args": ""
+        }
+    ]
+}

@@ -4,6 +4,8 @@ import com.googlecode.lanterna.SGR;
 import com.googlecode.lanterna.TerminalSize;
 import com.googlecode.lanterna.gui2.BasicWindow;
 import com.googlecode.lanterna.gui2.Button;
+import com.googlecode.lanterna.gui2.CheckBox;
+import com.googlecode.lanterna.gui2.ComboBox;
 import com.googlecode.lanterna.gui2.Direction;
 import com.googlecode.lanterna.gui2.EmptySpace;
 import com.googlecode.lanterna.gui2.GridLayout;
@@ -93,8 +95,14 @@ public class ImapPanel extends Panel {
     val dialog =
         new BasicWindow(existing == null ? "Aggiungi Server IMAP" : "Modifica Server IMAP");
     dialog.setHints(List.of(Window.Hint.CENTERED, Window.Hint.MODAL));
+
+    // fa sì che premendo ESC la finestra si chiuda
+    // equivalente al click su "Annulla"
+    dialog.setCloseWindowWithEscape(true);
+
     val root = new Panel(new GridLayout(2));
-    root.setPreferredSize(new TerminalSize(90, 13));
+    // leggermente più alto per far spazio al CheckBox
+    root.setPreferredSize(new TerminalSize(90, 14));
 
     val tbName =
         TuiUtils.requiredTextBox(
@@ -112,6 +120,65 @@ public class ImapPanel extends Panel {
     val tbInbox =
         TuiUtils.requiredTextBox(
             50, existing != null ? LangUtils.nullToEmpty(existing.getInboxFolder()) : "INBOX");
+
+    // NEW: CheckBox per SpamAssassin
+    val cbSpam =
+        new CheckBox("Usa SpamAssassin")
+            .setChecked(existing != null && existing.isUseSpamAssassin());
+    val cbSpamAction = new ComboBox<ImapConfig.SpamAction>(ImapConfig.SpamAction.values());
+    // default/valore esistente
+    cbSpamAction.setSelectedItem(
+        existing != null ? existing.getSpamAction() : ImapConfig.SpamAction.DELETE);
+
+    // TextBox per cartella SPAM (solo se MOVE)
+    val tbSpamFolder = new TextBox(new TerminalSize(30, 1));
+    tbSpamFolder.setText(existing != null ? existing.getSpamFolder() : "Junk");
+
+    val btnBrowseSpam =
+        new Button(
+            "Sfoglia…",
+            () -> {
+              // Costruisce una config temporanea con i valori correnti del form
+              val tmp =
+                  ImapConfig.builder()
+                      .name(tbName.getText().trim())
+                      .host(tbHost.getText().trim())
+                      .port(tbPort.getText().trim())
+                      .username(tbUser.getText().trim())
+                      .password(tbPass.getText())
+                      .inboxFolder(
+                          tbInbox.getText().trim().isEmpty() ? "INBOX" : tbInbox.getText().trim())
+                      .useSpamAssassin(cbSpam.isChecked())
+                      .spamAction(cbSpamAction.getSelectedItem())
+                      .spamFolder(
+                          LangUtils.emptyString(tbSpamFolder.getText())
+                              ? "Junk"
+                              : tbSpamFolder.getText().trim())
+                      .build();
+
+              val folders = TuiUtils.fetchImapFolders(gui, tmp); // operazione bloccante
+              if (folders == null) return;
+              if (folders.isEmpty()) {
+                TuiUtils.info(gui, "Nessuna cartella messaggi trovata.");
+                return;
+              }
+              val chosen =
+                  TuiUtils.chooseFromList(
+                      gui, "Seleziona cartella SPAM", folders, tbSpamFolder.getText());
+              if (chosen != null) tbSpamFolder.setText(chosen);
+            });
+
+    // Abilita/disabilita in base alla selezione
+    final Runnable updateSpamFolderEnabled =
+        () -> {
+          boolean enable =
+              cbSpam.isChecked() && cbSpamAction.getSelectedItem() == ImapConfig.SpamAction.MOVE;
+          tbSpamFolder.setEnabled(enable);
+          btnBrowseSpam.setEnabled(enable); // <— AGGIUNTA
+        };
+    cbSpamAction.addListener((comboBox, prev, curr) -> updateSpamFolderEnabled.run());
+    cbSpam.addListener(checked -> updateSpamFolderEnabled.run());
+    updateSpamFolderEnabled.run();
 
     if (existing != null) {
       tbName.setText(LangUtils.nullToEmpty(existing.getName()));
@@ -150,6 +217,13 @@ public class ImapPanel extends Panel {
                       .password(tbPass.getText())
                       .inboxFolder(
                           tbInbox.getText().trim().isEmpty() ? "INBOX" : tbInbox.getText().trim())
+                      // NEW: passa il valore anche al config temporaneo
+                      .useSpamAssassin(cbSpam.isChecked())
+                      .spamAction(cbSpamAction.getSelectedItem())
+                      .spamFolder(
+                          LangUtils.emptyString(tbSpamFolder.getText())
+                              ? "Junk"
+                              : tbSpamFolder.getText().trim())
                       .build();
               val folders = TuiUtils.fetchImapFolders(gui, tmp); // operazione bloccante
               if (folders == null) return;
@@ -162,6 +236,21 @@ public class ImapPanel extends Panel {
               if (chosen != null) tbInbox.setText(chosen);
             }));
     root.addComponent(inboxRow);
+
+    // NEW: riga per SpamAssassin
+    root.addComponent(new Label("SpamAssassin:"));
+    root.addComponent(cbSpam);
+    // riga: Azione SPAM
+    root.addComponent(new Label("Azione SPAM:"));
+    root.addComponent(cbSpamAction);
+
+    // riga: Cartella SPAM (solo se MOVE) + bottone Sfoglia…
+    root.addComponent(new Label("Cartella SPAM:"));
+    val spamFolderRow = new Panel(new LinearLayout(Direction.HORIZONTAL));
+    spamFolderRow.addComponent(tbSpamFolder);
+    spamFolderRow.addComponent(new EmptySpace(new TerminalSize(1, 1)));
+    spamFolderRow.addComponent(btnBrowseSpam);
+    root.addComponent(spamFolderRow);
 
     val buttons = new Panel(new LinearLayout(Direction.HORIZONTAL));
     val result = new ImapConfig[1];
@@ -194,6 +283,12 @@ public class ImapPanel extends Panel {
               if (!TuiUtils.validatePort(gui, tbPort)) return;
               if (!TuiUtils.validateRequired(gui, "Username", tbUser)) return;
               if (!TuiUtils.validateRequired(gui, "Inbox", tbInbox)) return;
+              if (cbSpam.isChecked()
+                  && cbSpamAction.getSelectedItem() == ImapConfig.SpamAction.MOVE
+                  && LangUtils.emptyString(tbSpamFolder.getText().trim())) {
+                TuiUtils.error(gui, "Specificare la Cartella SPAM per l'azione 'Sposta'.");
+                return;
+              }
 
               val name = tbName.getText().trim();
               val host = tbHost.getText().trim();
@@ -220,6 +315,13 @@ public class ImapPanel extends Panel {
                       .username(user)
                       .password(pass)
                       .inboxFolder(inbox)
+                      // NEW: salva il flag
+                      .useSpamAssassin(cbSpam.isChecked())
+                      .spamAction(cbSpamAction.getSelectedItem())
+                      .spamFolder(
+                          tbSpamFolder.getText().trim().isEmpty()
+                              ? "Junk"
+                              : tbSpamFolder.getText().trim())
                       .build();
               dialog.close();
             }));

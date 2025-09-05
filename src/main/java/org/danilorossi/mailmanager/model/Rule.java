@@ -7,7 +7,7 @@ import lombok.*;
 import lombok.extern.java.Log;
 import org.danilorossi.mailmanager.helpers.LangUtils;
 import org.danilorossi.mailmanager.helpers.LogConfigurator;
-import org.danilorossi.mailmanager.helpers.MailTextExtractor;
+import org.danilorossi.mailmanager.helpers.MailUtils;
 
 @AllArgsConstructor
 @NoArgsConstructor
@@ -49,14 +49,15 @@ public class Rule {
           LangUtils.warn(log, "MOVE senza destValue: regola ignorata");
           return;
         }
-        Folder target = store.getFolder(destValue);
-        if (target == null || !target.exists()) {
-          LangUtils.warn(log, "Cartella destinazione inesistente: {}", destValue);
+
+        MailUtils.ensureOpenRW(sourceFolder);
+        final Folder target;
+        try {
+          target = MailUtils.ensureFolderExistsAndOpen(store, destValue);
+        } catch (MessagingException me) {
+          LangUtils.err(log, "Impossibile aprire/creare '{}': {}", destValue, LangUtils.exMsg(me));
           return;
         }
-        // READ_WRITE per eliminare dalla sorgente
-        ensureOpenRW(sourceFolder);
-        ensureOpenRW(target);
 
         if (sourceFolder instanceof IMAPFolder imapSrc && target instanceof IMAPFolder imapDst) {
           imapSrc.moveMessages(new Message[] {message}, imapDst);
@@ -65,7 +66,7 @@ public class Rule {
           sourceFolder.copyMessages(new Message[] {message}, target);
           message.setFlag(Flags.Flag.DELETED, true);
         }
-        LangUtils.info(log, "Spostato in {}:{}", destValue, safeSubject(message));
+        LangUtils.info(log, "Spostato in {}:{}", destValue, MailUtils.safeSubject(message));
       }
 
       case COPY -> {
@@ -73,21 +74,132 @@ public class Rule {
           LangUtils.warn(log, "COPY senza destValue: regola ignorata");
           return;
         }
-        Folder target = store.getFolder(destValue);
-        if (target == null || !target.exists()) {
-          LangUtils.warn(log, "Cartella destinazione inesistente: {}", destValue);
+        MailUtils.ensureOpenRW(sourceFolder);
+        final Folder target;
+        try {
+          target = MailUtils.ensureFolderExistsAndOpen(store, destValue);
+        } catch (MessagingException me) {
+          LangUtils.err(log, "Impossibile aprire/creare '{}': {}", destValue, LangUtils.exMsg(me));
           return;
         }
-        ensureOpenRO(sourceFolder);
-        ensureOpenRO(target); // per alcuni provider non serve, ma non fa male
         sourceFolder.copyMessages(new Message[] {message}, target);
-        LangUtils.info(log, "Copiato in {}: {}", destValue, safeSubject(message));
+        LangUtils.info(log, "Copiato in {}: {}", destValue, MailUtils.safeSubject(message));
       }
 
       case DELETE -> {
-        ensureOpenRW(sourceFolder);
+        MailUtils.ensureOpenRW(sourceFolder);
         message.setFlag(Flags.Flag.DELETED, true);
-        LangUtils.info(log, "Eliminato: {}", safeSubject(message));
+        LangUtils.info(log, "Eliminato: {}", MailUtils.safeSubject(message));
+      }
+
+      case MARK_READ -> {
+        MailUtils.ensureOpenRW(sourceFolder);
+        message.setFlag(Flags.Flag.SEEN, true);
+        LangUtils.info(log, "Marcato come letto: {}", MailUtils.safeSubject(message));
+      }
+
+      case MARK_UNREAD -> {
+        MailUtils.ensureOpenRW(sourceFolder);
+        message.setFlag(Flags.Flag.SEEN, false);
+        LangUtils.info(log, "Marcato come non letto: {}", MailUtils.safeSubject(message));
+      }
+
+      case FLAG -> {
+        MailUtils.ensureOpenRW(sourceFolder);
+        message.setFlag(Flags.Flag.FLAGGED, true); // “stellina”
+        LangUtils.info(log, "Aggiunta flag (FLAGGED): {}", MailUtils.safeSubject(message));
+      }
+
+      case ADD_LABEL -> {
+        if (LangUtils.emptyString(destValue)) {
+          LangUtils.warn(log, "ADD_LABEL senza destValue: regola ignorata");
+          return;
+        }
+        if (!sourceFolder.getPermanentFlags().contains(Flags.Flag.USER)) {
+          LangUtils.warn(
+              log, "Server non supporta user flags (IMAP keywords), salto ADD/REMOVE_LABEL");
+          return;
+        }
+        MailUtils.ensureOpenRW(sourceFolder);
+        for (val label : MailUtils.splitLabels(destValue)) {
+          message.setFlags(new Flags(label), true); // IMAP keywords (user flags)
+        }
+        LangUtils.info(log, "Aggiunte label {}: {}", destValue, MailUtils.safeSubject(message));
+      }
+
+      case REMOVE_LABEL -> {
+        if (LangUtils.emptyString(destValue)) {
+          LangUtils.warn(log, "REMOVE_LABEL senza destValue: regola ignorata");
+          return;
+        }
+        if (!sourceFolder.getPermanentFlags().contains(Flags.Flag.USER)) {
+          LangUtils.warn(
+              log, "Server non supporta user flags (IMAP keywords), salto ADD/REMOVE_LABEL");
+          return;
+        }
+        MailUtils.ensureOpenRW(sourceFolder);
+        for (val label : MailUtils.splitLabels(destValue)) {
+          message.setFlags(new Flags(label), false); // rimuove keyword
+        }
+        LangUtils.info(log, "Rimosse label {}: {}", destValue, MailUtils.safeSubject(message));
+      }
+
+      case ARCHIVE -> {
+        // Se destValue presente, usa quello; altrimenti prova nomi comuni
+        val targetName =
+            LangUtils.emptyString(destValue) ? MailUtils.resolveArchiveName(store) : destValue;
+        if (LangUtils.emptyString(targetName)) {
+          LangUtils.warn(log, "ARCHIVE: nessuna cartella archivio disponibile");
+          return;
+        }
+        final Folder target;
+        try {
+          target = MailUtils.ensureFolderExistsAndOpen(store, targetName);
+        } catch (MessagingException me) {
+          LangUtils.err(
+              log, "ARCHIVE: impossibile aprire/creare '{}': {}", targetName, LangUtils.exMsg(me));
+          return;
+        }
+        if (sourceFolder instanceof IMAPFolder imapSrc && target instanceof IMAPFolder imapDst) {
+          imapSrc.moveMessages(new Message[] {message}, imapDst);
+        } else {
+          sourceFolder.copyMessages(new Message[] {message}, target);
+          message.setFlag(Flags.Flag.DELETED, true);
+        }
+        LangUtils.info(log, "Archiviato in {}: {}", targetName, MailUtils.safeSubject(message));
+      }
+
+      case FORWARD -> {
+        if (LangUtils.emptyString(destValue)) {
+          LangUtils.warn(log, "FORWARD senza destValue (indirizzo): regola ignorata");
+          return;
+        }
+        try {
+          // Best-effort: usa le System properties per la Session SMTP (in attesa di coord. SMTP su
+          // ImapConfig)
+          val props = System.getProperties();
+          if (props.getProperty("mail.smtp.host") == null
+              && props.getProperty("mail.smtps.host") == null) {
+            LangUtils.warn(
+                log,
+                "FORWARD: SMTP non configurato (mail.smtp[s].host assente), operazione saltata");
+            return;
+          }
+          val session = Session.getInstance(props);
+
+          val fwd = MailUtils.buildForward(session, message, destValue); // <— usa un tuo helper
+          Transport.send(fwd);
+          LangUtils.info(log, "Inoltrato a {}: {}", destValue, MailUtils.safeSubject(message));
+        } catch (Exception ex) {
+          LangUtils.err(log, "FORWARD fallito verso {}: {}", destValue, LangUtils.exMsg(ex));
+        }
+      }
+
+      case STOP -> {
+        // Con l’attuale motore (che fa break dopo la prima regola applicata) è di fatto un NO-OP.
+        // Lasciamo un log per chiarezza.
+        LangUtils.info(
+            log, "STOP elaborazione ulteriori regole per: {}", MailUtils.safeSubject(message));
       }
     }
   }
@@ -97,22 +209,6 @@ public class Rule {
     final String right = LangUtils.normalize(conditionValue);
 
     return conditionOperator.test(left, right, caseSensitive);
-  }
-
-  private static String safeSubject(Message m) {
-    try {
-      return String.valueOf(m.getSubject());
-    } catch (MessagingException e) {
-      return "(no-subject)";
-    }
-  }
-
-  private static void ensureOpenRO(Folder f) throws MessagingException {
-    if (!f.isOpen()) f.open(Folder.READ_ONLY);
-  }
-
-  private static void ensureOpenRW(Folder f) throws MessagingException {
-    if (!f.isOpen() || f.getMode() != Folder.READ_WRITE) f.open(Folder.READ_WRITE);
   }
 
   // Estrae il valore da confrontare in base al soggetto
@@ -130,7 +226,7 @@ public class Rule {
         case MESSAGE -> {
           Object content = message.getContent();
           if (content instanceof String s) yield s;
-          if (content instanceof Multipart) yield MailTextExtractor.extractTextFromMessage(message);
+          if (content instanceof Multipart) yield MailUtils.extractTextFromMessage(message);
           yield "";
         }
       };

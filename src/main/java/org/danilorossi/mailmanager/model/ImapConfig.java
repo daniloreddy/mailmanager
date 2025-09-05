@@ -18,7 +18,20 @@ import org.danilorossi.mailmanager.helpers.LangUtils;
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class ImapConfig {
 
+  /** Azioni per gestione SPAM lato server */
+  public enum SpamAction {
+    DELETE, // flag DELETED (+expunge a fine ciclo)
+    MOVE, // sposta in spamFolder
+    MARK_AS_READ // segna come SEEN, lascia in Inbox
+  }
+
   @Builder.Default private boolean useSpamAssassin = false;
+
+  /** Azione da eseguire se SpamAssassin classifica come SPAM */
+  @Builder.Default private SpamAction spamAction = SpamAction.DELETE;
+
+  /** Cartella destinazione quando spamAction == MOVE */
+  @Builder.Default private String spamFolder = "Junk";
 
   @Builder.Default
   @ToString.Include(rank = 100)
@@ -65,7 +78,6 @@ public class ImapConfig {
     p.put(LangUtils.s("{}.auth", prefix), String.valueOf(auth));
     p.put(LangUtils.s("{}.ssl.enable", prefix), String.valueOf(ssl));
     p.put(LangUtils.s("{}.starttls.enable", prefix), String.valueOf(!ssl));
-
     p.put(LangUtils.s("{}.connectiontimeout", prefix), String.valueOf(connectionTimeoutMs));
     p.put(LangUtils.s("{}.timeout", prefix), String.valueOf(readTimeoutMs));
     p.put(LangUtils.s("{}.writetimeout", prefix), String.valueOf(writeTimeoutMs));
@@ -90,5 +102,9 @@ public class ImapConfig {
     }
     if (LangUtils.emptyString(inboxFolder))
       throw new IllegalArgumentException("IMAP inboxFolder is blank");
+    // Vincolo: se si sceglie MOVE, spamFolder non può essere vuoto
+    if (useSpamAssassin && spamAction == SpamAction.MOVE && LangUtils.emptyString(spamFolder)) {
+      throw new IllegalArgumentException("Spam folder is blank while action is MOVE");
+    }
   }
 }

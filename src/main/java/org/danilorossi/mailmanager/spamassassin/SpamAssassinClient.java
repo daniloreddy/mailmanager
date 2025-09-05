@@ -1,7 +1,6 @@
 package org.danilorossi.mailmanager.spamassassin;
 
 import jakarta.mail.Message;
-import jakarta.mail.MessagingException;
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.ProtocolException;
@@ -12,6 +11,8 @@ import lombok.*;
 import lombok.extern.java.Log;
 import org.danilorossi.mailmanager.helpers.LangUtils;
 import org.danilorossi.mailmanager.helpers.LogConfigurator;
+import org.danilorossi.mailmanager.helpers.MailUtils;
+import org.danilorossi.mailmanager.model.SpamAssassinConfig;
 
 /**
  * Minimal SpamAssassin (spamd) client implementing core SPAMC/1.5 protocol parts.
@@ -71,6 +72,19 @@ public class SpamAssassinClient {
   }
 
   /**
+   * Utility to feed a String email (will be encoded UTF-8). Prefer byte[] of the original RFC822.
+   */
+  public CheckResult check(String rfc822Message) throws IOException, ProtocolException {
+    return check(rfc822Message.getBytes(StandardCharsets.UTF_8));
+  }
+
+  /** Variante CHECK che accetta un jakarta.mail.Message. */
+  public CheckResult check(@NonNull final Message message) throws IOException, ProtocolException {
+    val bytes = MailUtils.toRfc822Bytes(message);
+    return check(bytes);
+  }
+
+  /**
    * Request contributing symbols (spamd SYMBOLS). Returns full response including body. Body
    * commonly contains a space/comma-separated list of symbols.
    */
@@ -90,6 +104,17 @@ public class SpamAssassinClient {
         .symbolsRaw(resp.getBody() != null ? resp.getBody() : "")
         .rawResponse(resp.getRaw())
         .build();
+  }
+
+  /** Variante SYMBOLS che accetta un jakarta.mail.Message. */
+  public SymbolsResult symbols(@NonNull final Message message)
+      throws IOException, ProtocolException {
+    val bytes = MailUtils.toRfc822Bytes(message);
+    return symbols(bytes);
+  }
+
+  public SymbolsResult symbols(String rfc822Message) throws IOException, ProtocolException {
+    return symbols(rfc822Message.getBytes(StandardCharsets.UTF_8));
   }
 
   // --------------------------------------------------------------------------------------------
@@ -128,13 +153,13 @@ public class SpamAssassinClient {
   private Response readResponse(@NonNull final InputStream in) throws IOException {
     // We read CRLF-delimited lines for the status line + headers.
     val headerLines = new ArrayList<String>(16);
-    val statusLine = readLineCRLF(in);
+    val statusLine = MailUtils.readLineCRLF(in);
     if (statusLine == null) {
       throw new EOFException("No status line from spamd");
     }
     // Headers until empty line
     String line;
-    while ((line = readLineCRLF(in)) != null) {
+    while ((line = MailUtils.readLineCRLF(in)) != null) {
       if (line.isEmpty()) break;
       headerLines.add(line);
     }
@@ -261,69 +286,6 @@ public class SpamAssassinClient {
     return new ScoreLine(isSpam, score, threshold);
   }
 
-  /**
-   * Reads a single CRLF-terminated line. Returns null on EOF before any byte is read. Strips the
-   * trailing CRLF.
-   */
-  private static String readLineCRLF(@NonNull final InputStream in) throws IOException {
-    @Cleanup val baos = new ByteArrayOutputStream(128);
-    int prev = -1;
-    int b;
-    boolean gotAny = false;
-    while ((b = in.read()) != -1) {
-      gotAny = true;
-      if (prev == '\r' && b == '\n') {
-        // strip the last '\r'
-        val arr = baos.toByteArray();
-        val len = Math.max(0, arr.length - 1);
-        return new String(arr, 0, len, StandardCharsets.US_ASCII);
-      }
-      baos.write(b);
-      prev = b;
-    }
-    return gotAny ? new String(baos.toByteArray(), StandardCharsets.US_ASCII) : null;
-  }
-
-  /**
-   * Converte un jakarta.mail.Message in RFC822 bytes (header + body) usando writeTo(). Usa CRLF
-   * corrette e mantiene intatti gli header.
-   */
-  private static byte[] toRfc822Bytes(@NonNull final Message message) throws IOException {
-    @Cleanup val baos = new ByteArrayOutputStream(64 * 1024);
-    try {
-      // writeTo() serializza l'intero messaggio (header + body) in formato RFC822
-      message.writeTo(baos);
-    } catch (MessagingException e) {
-      // Riconfeziono in IOException per coerenza con le altre API I/O del client
-      throw new IOException("Failed to serialize jakarta.mail.Message to RFC822", e);
-    }
-    return baos.toByteArray();
-  }
-
-  /** Variante CHECK che accetta un jakarta.mail.Message. */
-  public CheckResult check(@NonNull final Message message) throws IOException, ProtocolException {
-    val bytes = toRfc822Bytes(message);
-    return check(bytes);
-  }
-
-  /** Variante SYMBOLS che accetta un jakarta.mail.Message. */
-  public SymbolsResult symbols(@NonNull final Message message)
-      throws IOException, ProtocolException {
-    val bytes = toRfc822Bytes(message);
-    return symbols(bytes);
-  }
-
-  /**
-   * Utility to feed a String email (will be encoded UTF-8). Prefer byte[] of the original RFC822.
-   */
-  public CheckResult check(String rfc822Message) throws IOException, ProtocolException {
-    return check(rfc822Message.getBytes(StandardCharsets.UTF_8));
-  }
-
-  public SymbolsResult symbols(String rfc822Message) throws IOException, ProtocolException {
-    return symbols(rfc822Message.getBytes(StandardCharsets.UTF_8));
-  }
-
   // --------------------------------------------------------------------------------------------
   // Example usage
   // --------------------------------------------------------------------------------------------
@@ -356,5 +318,15 @@ public class SpamAssassinClient {
 
     val symbols = client.symbols(sampleEmail);
     System.out.println("SYMBOLS -> " + symbols.getSymbolsRaw());
+  }
+
+  public static SpamAssassinClient newFromConfig(@NonNull final SpamAssassinConfig config) {
+    return SpamAssassinClient.builder()
+        .host(config.getHost())
+        .port(config.getPort())
+        .user(config.getUser())
+        .connectTimeoutMillis(config.getConnectTimeoutMillis())
+        .readTimeoutMillis(config.getReadTimeoutMillis())
+        .build();
   }
 }

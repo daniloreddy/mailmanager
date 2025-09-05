@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.google.gson.reflect.TypeToken;
 import jakarta.mail.Folder;
+import jakarta.mail.Message;
 import jakarta.mail.Session;
 import jakarta.mail.Store;
 import jakarta.mail.UIDFolder;
@@ -23,10 +24,12 @@ import lombok.val;
 import org.danilorossi.mailmanager.helpers.FileSystemUtils;
 import org.danilorossi.mailmanager.helpers.LangUtils;
 import org.danilorossi.mailmanager.helpers.LogConfigurator;
+import org.danilorossi.mailmanager.helpers.MailUtils;
 import org.danilorossi.mailmanager.model.ImapConfig;
 import org.danilorossi.mailmanager.model.Rule;
 import org.danilorossi.mailmanager.model.SpamAssassinConfig;
 import org.danilorossi.mailmanager.model.State;
+import org.danilorossi.mailmanager.spamassassin.SpamAssassinClient;
 import org.danilorossi.mailmanager.tui.ConsoleTUI;
 
 @Log
@@ -264,9 +267,43 @@ public class MailManager {
       }
 
       val messages = uidFolder.getMessagesByUID(startUid, endUid);
+
+      // Prefetch per ridurre roundtrip
+      val fp = new jakarta.mail.FetchProfile();
+      fp.add(UIDFolder.FetchProfileItem.UID);
+      fp.add(jakarta.mail.FetchProfile.Item.ENVELOPE);
+      fp.add(jakarta.mail.FetchProfile.Item.FLAGS);
+      fp.add(jakarta.mail.FetchProfile.Item.CONTENT_INFO); // opzionale
+
+      // Header specifici che spesso servono
+      fp.add("Subject");
+      fp.add("From");
+      fp.add("To");
+      fp.add("Date");
+      fp.add("Message-ID");
+      fp.add("List-Id");
+      fp.add("Authentication-Results");
+      fp.add("Received-SPF");
+      folder.fetch(messages, fp);
+
       LangUtils.info(log, "Trovati {} messaggi (UID {}..{}).", messages.length, startUid, endUid);
 
       long lastSeenUid = state.getLastProcessedUid();
+      // il flag indica se qualcosa è stato eliminato (per espulsione a fine ciclo)
+      boolean anyDeleted = false;
+
+      // Client SPAM ASSASSIN (opzionale)
+      SpamAssassinClient spamClient = null;
+      if (imap.isUseSpamAssassin()) {
+        try {
+          spamClient = SpamAssassinClient.newFromConfig(spamConfig);
+          LangUtils.info(
+              log, "SpamAssassin attivo su {}:{}", spamConfig.getHost(), spamConfig.getPort());
+        } catch (Exception se) {
+          LangUtils.err(log, "SpamAssassin non disponibile: {}", LangUtils.exMsg(se));
+          spamClient = null; // disabilita per questo giro
+        }
+      }
 
       for (val message : messages) {
         long uid = uidFolder.getUID(message);
@@ -276,6 +313,60 @@ public class MailManager {
         if (!state.shouldProcess(uid, currentUidValidity)) {
           lastSeenUid = Math.max(lastSeenUid, uid); // tieni comunque traccia del massimo visto
           continue;
+        }
+
+        // il controllo SPAMASSIN va fatto prima di valutare le regole
+        if (spamClient != null) {
+          try {
+            val check = spamClient.check(message); // recupera header e body
+            LangUtils.info(
+                log,
+                "SpamAssassin check: UID:{} SPAM:{} SCORE:{} SOGLIA:{}",
+                uid,
+                check.isSpam(),
+                check.getScore(),
+                check.getThreshold());
+            if (check.isSpam()) {
+              switch (imap.getSpamAction()) {
+                case DELETE -> {
+                  message.setFlag(jakarta.mail.Flags.Flag.DELETED, true);
+                  anyDeleted = true;
+                  LangUtils.info(log, "UID {} marcato SPAM: azione DELETE.", uid);
+                }
+                case MOVE -> {
+                  try {
+                    @Cleanup
+                    val dst = MailUtils.ensureFolderExistsAndOpen(store, imap.getSpamFolder());
+                    folder.copyMessages(new Message[] {message}, dst);
+                    message.setFlag(
+                        jakarta.mail.Flags.Flag.DELETED, true); // opzionale: rimuovi dall’Inbox
+                    anyDeleted = true;
+                    LangUtils.info(
+                        log, "UID {} marcato SPAM: spostato in '{}'.", uid, imap.getSpamFolder());
+                  } catch (Exception moveEx) {
+                    LangUtils.err(
+                        log,
+                        "Errore spostamento SPAM UID {} in '{}': {}",
+                        uid,
+                        imap.getSpamFolder(),
+                        LangUtils.exMsg(moveEx));
+                    // fallback sicuro: marca come letto per non riprocessarlo all’infinito
+                    message.setFlag(jakarta.mail.Flags.Flag.SEEN, true);
+                  }
+                }
+                case MARK_AS_READ -> {
+                  message.setFlag(jakarta.mail.Flags.Flag.SEEN, true);
+                  LangUtils.info(log, "UID {} marcato SPAM: azione MARK_AS_READ.", uid);
+                }
+              }
+              // avanza lo stato
+              lastSeenUid = Math.max(lastSeenUid, uid);
+              continue; // passa al messaggio successivo
+            }
+          } catch (Exception se) {
+            // Non bloccare l’elaborazione: logga e continua senza SpamAssassin
+            LangUtils.err(log, "Errore SpamAssassin su UID {}: {}", uid, LangUtils.exMsg(se));
+          }
         }
 
         // valuta regole: prima che matcha, applichi e stop (come fai ora)
@@ -290,7 +381,7 @@ public class MailManager {
         }
 
         // avanza lo stato al massimo UID visto (indipendentemente dal match)
-        if (uid > lastSeenUid) lastSeenUid = uid;
+        lastSeenUid = Math.max(lastSeenUid, uid);
 
         // (opzionale) se vuoi avanzare *solo* quando è stata applicata almeno una regola:
         // if (acted && uid > lastSeenUid) lastSeenUid = uid;
@@ -303,7 +394,10 @@ public class MailManager {
                 .withUpdatedAtEpochMs(System.currentTimeMillis()));
       }
       // Espelli i messaggi eliminati e chiudi (gestito da @Cleanup)
-      folder.expunge();
+      if (anyDeleted) {
+        folder.expunge(); // chiama expunge solo se hai marcato qualcosa
+        LangUtils.info(log, "Expunge eseguito: messaggi spam rimossi.");
+      }
       LangUtils.info(log, "Operazioni email completate.");
     } catch (Exception e) {
       LangUtils.err(log, "Errore durante l'elaborazione delle email: {}", LangUtils.exMsg(e));

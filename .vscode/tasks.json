@@ -1,0 +1,49 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "format-sources",
+            "type": "shell",
+            "command": "ant",
+            "args": [
+                "format"
+            ]
+        },
+        {
+            "label": "package",
+            "type": "shell",
+            "command": "ant",
+            "args": [
+                "package"
+            ]
+        },
+        {
+            "label": "Run MailManager TUI",
+            "type": "shell",
+            "command": "ant",
+            "args": [
+                "TUI"
+            ],
+            "options": {
+                "env": {
+                    "DEV": "__DEV__"
+                }
+            }
+        },
+        {
+            "label": "Run MailManager",
+            "type": "shell",
+            "command": "ant",
+            "args": [
+                "run"
+            ],
+            "options": {
+                "env": {
+                    "DEV": "__DEV__"
+                }
+            }
+        },
+    ]
+}

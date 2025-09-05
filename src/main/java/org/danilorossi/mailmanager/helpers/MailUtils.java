@@ -1,10 +1,19 @@
 package org.danilorossi.mailmanager.helpers;
 
+import jakarta.activation.DataHandler;
+import jakarta.mail.Address;
+import jakarta.mail.Folder;
 import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
 import jakarta.mail.Multipart;
 import jakarta.mail.Part;
+import jakarta.mail.Session;
+import jakarta.mail.Store;
 import jakarta.mail.internet.ContentType;
+import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeBodyPart;
+import jakarta.mail.internet.MimeMessage;
+import jakarta.mail.internet.MimeMultipart;
 import jakarta.mail.internet.MimeUtility;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -14,20 +23,19 @@ import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
 import java.nio.charset.UnsupportedCharsetException;
 import java.util.Locale;
-import java.util.logging.Logger;
 import lombok.Cleanup;
 import lombok.NonNull;
 import lombok.experimental.UtilityClass;
+import lombok.extern.java.Log;
 import lombok.val;
 import org.jsoup.Jsoup;
 
+@Log
 @UtilityClass
-public final class MailTextExtractor {
-
-  private static final Logger LOG = Logger.getLogger(MailTextExtractor.class.getName());
+public final class MailUtils {
 
   static {
-    LogConfigurator.configLog(LOG);
+    LogConfigurator.configLog(log);
   }
 
   /** Hard cap to avoid unbounded memory when parsing pathological emails. */
@@ -38,7 +46,7 @@ public final class MailTextExtractor {
     try {
       extractPart(msg, sb);
     } catch (Exception ex) {
-      LangUtils.debug(LOG, "extractTextFromMessage failed softly", ex);
+      LangUtils.debug(log, "extractTextFromMessage failed softly", ex);
     }
     val out = trimToMax(sb.toString().trim(), MAX_OUTPUT_CHARS);
     return out;
@@ -48,8 +56,18 @@ public final class MailTextExtractor {
       throws Exception {
     if (part == null) return;
 
+    LangUtils.debug(
+        log,
+        "Estrazione contenuto da {}",
+        LangUtils.nullToSomething(part.getDescription(), "(empty description)"));
+
     // Skip binary/inline resources (images, pdf, etc.)
     if (isSkippableBinary(part)) return;
+
+    LangUtils.debug(
+        log,
+        "Rilevato MIME {}",
+        LangUtils.nullToSomething(part.getContentType(), "(empty content-type)"));
 
     if (part.isMimeType("text/plain")) {
       val txt = getTextPayload(part);
@@ -94,7 +112,7 @@ public final class MailTextExtractor {
           try {
             extractPart(mp.getBodyPart(i), out);
           } catch (Exception ex) {
-            LangUtils.debug(LOG, "Skipping subpart on error", ex);
+            LangUtils.debug(log, "Skipping subpart on error", ex);
           }
         }
       }
@@ -114,11 +132,13 @@ public final class MailTextExtractor {
       val txt = getTextPayload(part);
       if (!LangUtils.emptyString(txt)) appendParagraph(out, cleanText(txt));
     }
+
+    LangUtils.warn(log, "MIME NON GESTITO!");
   }
 
   /* =================== Helpers =================== */
 
-  private static void appendParagraph(StringBuilder out, String text) {
+  private static void appendParagraph(@NonNull final StringBuilder out, final String text) {
     if (LangUtils.emptyString(text)) return;
     if (out.length() > 0 && out.charAt(out.length() - 1) != '\n') out.append('\n');
     out.append(text).append("\n\n");
@@ -146,7 +166,7 @@ public final class MailTextExtractor {
             if ("utf8".equals(norm)) norm = "utf-8";
             return Charset.forName(norm);
           } catch (IllegalCharsetNameException | UnsupportedCharsetException __) {
-            LangUtils.debug(LOG, "Unsupported charset '{}', falling back to UTF-8", cs);
+            LangUtils.debug(log, "Unsupported charset '{}', falling back to UTF-8", cs);
           }
         }
       }
@@ -163,7 +183,7 @@ public final class MailTextExtractor {
       @Cleanup val is = part.getInputStream();
       return readAll(is, detectCharset(part));
     } catch (Exception ex) {
-      LangUtils.debug(LOG, "getTextPayload failed softly", ex);
+      LangUtils.debug(log, "getTextPayload failed softly", ex);
     }
     return "";
   }
@@ -224,6 +244,11 @@ public final class MailTextExtractor {
       val cids = p.getHeader("Content-ID");
       if (cids != null && cids.length > 0 && !isTextish) return true;
 
+      try {
+        if (!p.isMimeType("text/*") && p.isMimeType("image/*")) return true;
+      } catch (MessagingException __) {
+        /* ignore */
+      }
       return false;
     } catch (MessagingException __) {
       return false;
@@ -253,5 +278,128 @@ public final class MailTextExtractor {
       // Fallback best-effort
       return cleanText(raw);
     }
+  }
+
+  /**
+   * Reads a single CRLF-terminated line. Returns null on EOF before any byte is read. Strips the
+   * trailing CRLF.
+   */
+  public static String readLineCRLF(@NonNull final InputStream in) throws IOException {
+    @Cleanup val baos = new ByteArrayOutputStream(128);
+    int prev = -1;
+    int b;
+    boolean gotAny = false;
+    while ((b = in.read()) != -1) {
+      gotAny = true;
+      if (prev == '\r' && b == '\n') {
+        // strip the last '\r'
+        val arr = baos.toByteArray();
+        val len = Math.max(0, arr.length - 1);
+        return new String(arr, 0, len, StandardCharsets.US_ASCII);
+      }
+      baos.write(b);
+      prev = b;
+    }
+    return gotAny ? new String(baos.toByteArray(), StandardCharsets.US_ASCII) : null;
+  }
+
+  /**
+   * Converte un jakarta.mail.Message in RFC822 bytes (header + body) usando writeTo(). Usa CRLF
+   * corrette e mantiene intatti gli header.
+   */
+  public static byte[] toRfc822Bytes(@NonNull final Message message) throws IOException {
+    @Cleanup val baos = new ByteArrayOutputStream(64 * 1024);
+    try {
+      // writeTo() serializza l'intero messaggio (header + body) in formato RFC822
+      message.writeTo(baos);
+    } catch (MessagingException e) {
+      // Riconfeziono in IOException per coerenza con le altre API I/O del client
+      throw new IOException("Failed to serialize jakarta.mail.Message to RFC822", e);
+    }
+    return baos.toByteArray();
+  }
+
+  public static String safeSubject(@NonNull final Message m) {
+    try {
+      return String.valueOf(m.getSubject());
+    } catch (MessagingException e) {
+      return "(no-subject)";
+    }
+  }
+
+  public static void ensureOpenRO(@NonNull final Folder f) throws MessagingException {
+    if (!f.isOpen()) f.open(Folder.READ_ONLY);
+  }
+
+  public static void ensureOpenRW(@NonNull final Folder f) throws MessagingException {
+    if (!f.isOpen() || f.getMode() != Folder.READ_WRITE) f.open(Folder.READ_WRITE);
+  }
+
+  public static Folder ensureFolderExistsAndOpen(
+      @NonNull final Store store, @NonNull final String folderName) throws MessagingException {
+    val f = store.getFolder(folderName);
+    if (!f.exists()) {
+      if (!f.create(Folder.HOLDS_MESSAGES)) {
+        throw new MessagingException("Impossibile creare la cartella: " + folderName);
+      }
+    }
+    ensureOpenRW(f);
+    return f;
+  }
+
+  // Prova a indovinare la cartella “Archivio” se non specificata
+  public static String resolveArchiveName(Store store) throws MessagingException {
+    // Nomi comuni
+    val candidates =
+        new String[] {"Archive", "Archivio", "[Gmail]/All Mail", "[Gmail]/Tutti i messaggi"};
+    for (val c : candidates) {
+      val f = store.getFolder(c);
+      if (f != null && f.exists()) return c;
+    }
+    return null; // nessun match
+  }
+
+  // Split "label1,label2 ; label3" -> ["label1","label2","label3"]
+  public static String[] splitLabels(final String s) {
+    return s == null
+        ? new String[0]
+        : java.util.Arrays.stream(s.split("[,;]"))
+            .map(String::trim)
+            .filter(x -> !x.isEmpty())
+            .toArray(String[]::new);
+  }
+
+  // MailUtils.java
+  public static MimeMessage buildForward(
+      @NonNull final Session session, @NonNull final Message original, @NonNull final String to)
+      throws MessagingException, IOException {
+    val fwd = new MimeMessage(session);
+    // From: prova a riusare il mittente originale o lascia vuoto (dipende dal tuo SMTP)
+    Address[] from = original.getReplyTo();
+    if (from == null || from.length == 0) from = original.getFrom();
+    if (from != null && from.length > 0) fwd.setFrom(from[0]);
+
+    fwd.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to, false));
+    val subj = original.getSubject();
+    fwd.setSubject((subj == null || subj.isBlank()) ? "Fwd:" : "Fwd: " + subj, "UTF-8");
+
+    // Allego l’originale come message/rfc822
+    val raw = MailUtils.toRfc822Bytes(original);
+    val bds = new jakarta.mail.util.ByteArrayDataSource(raw, "message/rfc822");
+    val attachment = new MimeBodyPart();
+    attachment.setDataHandler(new DataHandler(bds));
+    attachment.setFileName("forwarded.eml");
+
+    val intro = new MimeBodyPart();
+    intro.setText("Inoltro messaggio:", "UTF-8");
+
+    val mp = new MimeMultipart();
+    mp.addBodyPart(intro);
+    mp.addBodyPart(attachment);
+
+    fwd.setHeader("Auto-Submitted", "auto-forwarded");
+    fwd.setContent(mp);
+    fwd.saveChanges();
+    return fwd;
   }
 }
