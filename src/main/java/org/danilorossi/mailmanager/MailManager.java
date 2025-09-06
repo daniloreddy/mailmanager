@@ -1,15 +1,12 @@
 package org.danilorossi.mailmanager;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonSyntaxException;
-import com.google.gson.reflect.TypeToken;
 import jakarta.mail.Folder;
 import jakarta.mail.Message;
 import jakarta.mail.Session;
 import jakarta.mail.Store;
 import jakarta.mail.UIDFolder;
-import java.io.FileReader;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -21,10 +18,14 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.java.Log;
 import lombok.val;
+
+import org.danilorossi.mailmanager.db.JsonDb;
 import org.danilorossi.mailmanager.helpers.FileSystemUtils;
 import org.danilorossi.mailmanager.helpers.LangUtils;
 import org.danilorossi.mailmanager.helpers.LogConfigurator;
 import org.danilorossi.mailmanager.helpers.MailUtils;
+import org.danilorossi.mailmanager.helpers.SingleInstanceLock;
+import org.danilorossi.mailmanager.helpers.SingleInstanceLock.AlreadyRunningException;
 import org.danilorossi.mailmanager.model.ImapConfig;
 import org.danilorossi.mailmanager.model.Rule;
 import org.danilorossi.mailmanager.model.SpamAssassinConfig;
@@ -35,13 +36,27 @@ import org.danilorossi.mailmanager.tui.ConsoleTUI;
 @Log
 public class MailManager {
 
-  private static Gson GSON = new Gson();
+  // --- Persistenza / Repos
+  private final JsonDb db = new JsonDb();
 
   static {
     LogConfigurator.configLog(log);
   }
 
   public static void main(String[] args) throws IOException {
+
+    try (val ignored = SingleInstanceLock.acquire()) {
+      LangUtils.info(log, "Lock acquisito su {} " , SingleInstanceLock.defaultLockPath());
+      runMailManager(args);
+
+    } catch (AlreadyRunningException busy) {
+      // Se un'altra istanza è già attiva, usciamo silenziosamente
+      LangUtils.warn(log, "MailManager già in esecuzione: {}", busy.getMessage());
+      return;
+    }
+  }
+
+  private static void runMailManager(String[] args) throws IOException {
 
     // Gestione parametro -help
     if (Arrays.asList(args).contains("-help")
@@ -64,106 +79,126 @@ public class MailManager {
 
     try {
       mailManager.loadSpamConfig();
-    } catch (IOException e) {
+    } catch (IOException __) {
       new ConsoleTUI(mailManager).start();
       return;
     }
 
     try {
       mailManager.loadImaps();
-    } catch (IOException e) {
+    } catch (IOException __) {
       new ConsoleTUI(mailManager).start();
       return;
     }
 
     mailManager.loadRules();
-    mailManager.loadStates();
 
-    // Modalità configurazione IMAP
-    if (Arrays.asList(args).contains("-imap")) {
+    // Modalità configurazione
+    if (Arrays.asList(args).contains("-imap")
+        || Arrays.asList(args).contains("-rules")
+        || Arrays.asList(args).contains("-tui")) {
       new ConsoleTUI(mailManager).start();
       return;
     }
 
-    // Modalità gestione regole
-    if (Arrays.asList(args).contains("-rules")) {
-      new ConsoleTUI(mailManager).start();
-      return;
-    }
-
-    // Modalità gestione regole
-    if (Arrays.asList(args).contains("-tui")) {
-      new ConsoleTUI(mailManager).start();
-      return;
-    }
-
-    // Modalità elaborazione email
+    // Elaborazione email
     mailManager.processEmails();
-
-    mailManager.saveStates();
   }
 
   @Getter private List<ImapConfig> imaps = new ArrayList<>(); // Lista di configurazioni IMAP
   @Getter private List<Rule> rules = new ArrayList<>(); //  Lista di regole
-  @Getter private List<State> states = new ArrayList<>(); // Lista di stati
   @Getter private SpamAssassinConfig spamConfig = SpamAssassinConfig.builder().build();
-  private final Object statesLock = new Object();
 
+  /** Carica SpamAssassin; se il file non esiste, solleva IOException per aprire la TUI. */
   public void loadSpamConfig() throws IOException {
-    val spamFile = FileSystemUtils.getSpamAssassinJson().toFile();
-    @Cleanup val reader = new FileReader(spamFile);
-    spamConfig = GSON.fromJson(reader, SpamAssassinConfig.class);
-    if (spamConfig == null)
+    val path = FileSystemUtils.getSpamAssassinJson();
+    if (!Files.exists(path))
       throw new IOException("File di configurazione SPAM ASSASSIN non trovato.");
-    LangUtils.info(log, "Caricata configurazione SPAM ASSASSIN da file.");
+    this.spamConfig = db.spamd().load();
+    LangUtils.info(log, "Caricata configurazione SPAM ASSASSIN da {}", path);
   }
 
-  // Metodo per caricare le configurazioni IMAP da JSON
+  /**
+   * Carica le configurazioni IMAP; se il file non esiste, solleva IOException per aprire la TUI.
+   */
   public void loadImaps() throws IOException {
-    val configFile = FileSystemUtils.getImapServersJson().toFile();
-    val listType = new TypeToken<ArrayList<ImapConfig>>() {}.getType();
-    @Cleanup val reader = new FileReader(configFile);
-    imaps = GSON.fromJson(reader, listType);
-    if (imaps == null) throw new IOException("File di configurazione IMAP non trovato.");
-    LangUtils.info(log, "Caricata configurazione IMAP da file.");
+    val path = FileSystemUtils.getImapServersJson();
+    if (!Files.exists(path)) throw new IOException("File di configurazione IMAP non trovato.");
+    this.imaps = db.imaps().findAll();
+    LangUtils.info(log, "Caricate {} configurazioni IMAP da {}", imaps.size(), path);
   }
 
-  // Metodo per caricare regole da JSON
+  /** Carica le regole; se mancano, rimane lista vuota (comportamento attuale). */
   public void loadRules() {
-    val rulesFile = FileSystemUtils.getRulesJson().toFile();
+    val path = FileSystemUtils.getRulesJson();
+    if (!Files.exists(path)) {
+      this.rules = new ArrayList<>();
+      LangUtils.warn(log, "File regole non trovato in {}.", path);
+      return;
+    }
+    this.rules = db.rules().findAll();
+    LangUtils.info(log, "Caricate {} regole da {}", rules.size(), path);
+  }
+
+  // ===================== Salvataggi tramite JsonDb =====================
+
+  /** Salva tutte le IMAP correnti. */
+  public void saveImaps() {
     try {
-      @Cleanup val reader = new FileReader(rulesFile);
-      val listType = new TypeToken<ArrayList<Rule>>() {}.getType();
-      rules = GSON.fromJson(reader, listType);
-      if (rules == null) {
-        rules = new ArrayList<>();
-        LangUtils.warn(log, "File regole non trovato in {}", rulesFile.getAbsolutePath());
-      } else {
-        LangUtils.info(log, "Caricate %s recole da {}", rules.size(), rulesFile.getAbsolutePath());
-      }
-    } catch (IOException | JsonSyntaxException e) {
-      rules = new ArrayList<>();
-      LangUtils.warn(log, "File regole non trovato in {}.", rulesFile.getAbsolutePath());
+      db.imaps().saveAll(imaps);
+      LangUtils.info(
+          log,
+          "Salvata configurazione IMAP ({} elementi) su {}",
+          imaps.size(),
+          FileSystemUtils.getImapServersJson());
+    } catch (Exception e) {
+      LangUtils.err(log, "Errore nel salvataggio IMAP: {}", LangUtils.exMsg(e));
     }
   }
 
-  // Metodo per caricare stati da JSON
-  public void loadStates() {
-    val statesFile = FileSystemUtils.getProcessingStateJson().toFile();
+  /** Salva tutte le regole correnti. */
+  public void saveRules() {
     try {
-      @Cleanup val reader = new FileReader(statesFile);
-      val listType = new TypeToken<ArrayList<State>>() {}.getType();
-      states = GSON.fromJson(reader, listType);
-      if (states == null) {
-        states = new ArrayList<>();
-        LangUtils.warn(log, "File stati non trovato in {}.", statesFile.getAbsolutePath());
-      } else {
-        LangUtils.info(log, "Caricati {} stati da {}", states.size(), statesFile.getAbsolutePath());
-      }
-    } catch (IOException | JsonSyntaxException e) {
-      states = new ArrayList<>();
-      LangUtils.warn(log, "File stati non trovato in {}.", statesFile.getAbsolutePath());
+      db.rules().saveAll(rules);
+      LangUtils.info(log, "Salvate {} regole su {}", rules.size(), FileSystemUtils.getRulesJson());
+    } catch (Exception e) {
+      LangUtils.err(log, "Errore nel salvataggio regole: {}", LangUtils.exMsg(e));
     }
+  }
+
+  /** Salva la configurazione SpamAssassin corrente. */
+  public void saveSpamConfig() {
+    try {
+      db.spamd().save(spamConfig);
+      LangUtils.info(
+          log, "Salvata configurazione SPAM ASSASSIN su {}", FileSystemUtils.getSpamAssassinJson());
+    } catch (Exception e) {
+      LangUtils.err(log, "Errore nel salvataggio configurazione SPAM: {}", LangUtils.exMsg(e));
+    }
+  }
+
+  // Recupera o crea/persisti lo state “per cartella” usando JsonDb.
+  private State getOrCreateState(@NonNull String imapName, @NonNull String folderName) {
+    val key = State.keyOf(imapName, folderName);
+    // default “compatibile” con tua logica pregressa (lastProcessedUid=1L)
+    val def =
+        State.builder()
+            .imapConfigName(imapName)
+            .folder(folderName)
+            .uidValidity(-1L)
+            .lastProcessedUid(1L)
+            .updatedAtEpochMs(System.currentTimeMillis())
+            .build();
+
+    val s = db.states().getOrDefault(key, def);
+    // se era default (non presente su disco), persistilo subito
+    if (s == def) db.states().put(def);
+    return s;
+  }
+
+  // Sostituisce/persisti lo state aggiornato
+  private void replaceState(@NonNull final State newState) {
+    db.states().put(newState);
   }
 
   public void processEmails() {
@@ -189,25 +224,6 @@ public class MailManager {
     }
   }
 
-  // stato cartella-specifico
-  private State getOrCreateState(@NonNull String imapName, @NonNull String folderName) {
-    synchronized (statesLock) {
-      val k = State.keyOf(imapName, folderName);
-      for (val s : states)
-        if (k.equals(State.keyOf(s.getImapConfigName(), s.getFolder()))) return s;
-      val s =
-          State.builder()
-              .imapConfigName(imapName)
-              .folder(folderName)
-              .uidValidity(-1L)
-              .lastProcessedUid(1L)
-              .updatedAtEpochMs(System.currentTimeMillis())
-              .build();
-      states.add(s);
-      return s;
-    }
-  }
-
   private void processEmails(@NonNull final ImapConfig imap) {
 
     try {
@@ -230,24 +246,18 @@ public class MailManager {
       val currentUidValidity = uidFolder.getUIDValidity();
 
       // Stato "per cartella"
-      State state;
-      synchronized (statesLock) {
-        state =
-            getOrCreateState(imap.getName(), imap.getInboxFolder())
-                .refreshValidity(currentUidValidity);
-        // rimpiazza l'istanza aggiornata nella lista (in caso usi @With e immutabilità)
-        replaceState(state);
-      }
+      var state =
+          getOrCreateState(imap.getName(), imap.getInboxFolder())
+              .refreshValidity(currentUidValidity);
+      replaceState(state); // persistiamo eventuale refresh
 
       val uidNext = uidFolder.getUIDNext();
       if (uidNext <= 0) {
         LangUtils.info(log, "La casella sembra vuota (UIDNEXT <= 0).");
-        synchronized (statesLock) {
-          replaceState(
-              state
-                  .withUidValidity(currentUidValidity)
-                  .withUpdatedAtEpochMs(System.currentTimeMillis()));
-        }
+        replaceState(
+            state
+                .withUidValidity(currentUidValidity)
+                .withUpdatedAtEpochMs(System.currentTimeMillis()));
         return;
       }
 
@@ -256,13 +266,10 @@ public class MailManager {
       long endUid = uidNext - 1;
       if (startUid > endUid) {
         LangUtils.info(log, "Nessun nuovo messaggio.");
-        // comunque consolida UIDVALIDITY aggiornato
-        synchronized (statesLock) {
-          replaceState(
-              state
-                  .withUidValidity(currentUidValidity)
-                  .withUpdatedAtEpochMs(System.currentTimeMillis()));
-        }
+        replaceState(
+            state
+                .withUidValidity(currentUidValidity)
+                .withUpdatedAtEpochMs(System.currentTimeMillis()));
         return;
       }
 
@@ -301,7 +308,7 @@ public class MailManager {
               log, "SpamAssassin attivo su {}:{}", spamConfig.getHost(), spamConfig.getPort());
         } catch (Exception se) {
           LangUtils.err(log, "SpamAssassin non disponibile: {}", LangUtils.exMsg(se));
-          spamClient = null; // disabilita per questo giro
+          spamClient = null;
         }
       }
 
@@ -387,12 +394,9 @@ public class MailManager {
         // if (acted && uid > lastSeenUid) lastSeenUid = uid;
       }
 
-      synchronized (statesLock) {
-        replaceState(
-            state
-                .withLastProcessedUid(lastSeenUid)
-                .withUpdatedAtEpochMs(System.currentTimeMillis()));
-      }
+      replaceState(
+          state.withLastProcessedUid(lastSeenUid).withUpdatedAtEpochMs(System.currentTimeMillis()));
+
       // Espelli i messaggi eliminati e chiudi (gestito da @Cleanup)
       if (anyDeleted) {
         folder.expunge(); // chiama expunge solo se hai marcato qualcosa
@@ -401,74 +405,6 @@ public class MailManager {
       LangUtils.info(log, "Operazioni email completate.");
     } catch (Exception e) {
       LangUtils.err(log, "Errore durante l'elaborazione delle email: {}", LangUtils.exMsg(e));
-    }
-  }
-
-  private void replaceState(@NonNull final State newState) {
-    for (int i = 0; i < states.size(); i++) {
-      val s = states.get(i);
-      if (State.keyOf(s.getImapConfigName(), s.getFolder())
-          .equals(State.keyOf(newState.getImapConfigName(), newState.getFolder()))) {
-        states.set(i, newState);
-        return;
-      }
-    }
-    states.add(newState);
-  }
-
-  // Metodo per salvare la configurazione IMAP su JSON
-  public void saveImaps() {
-    val configFile = FileSystemUtils.getImapServersJson();
-    try {
-      FileSystemUtils.writeUtf8Atomic(configFile, GSON.toJson(imaps));
-      LangUtils.info(log, "Salvata configurazione IMAP su {}", configFile);
-    } catch (Exception e) {
-      LangUtils.err(
-          log,
-          "Errore durante il salvataggio della configurazione IMAP in {}: {}",
-          configFile,
-          LangUtils.exMsg(e));
-    }
-  }
-
-  // Metodo per salvare regole su JSON
-  public void saveRules() {
-    val rulesFile = FileSystemUtils.getRulesJson();
-    try {
-      FileSystemUtils.writeUtf8Atomic(rulesFile, GSON.toJson(rules));
-      LangUtils.info(log, "Salvate {} regole su {}", rules.size(), rulesFile);
-    } catch (Exception e) {
-      LangUtils.err(
-          log,
-          "Errore durante il salvataggio delle regole in {}: {}",
-          rulesFile,
-          LangUtils.exMsg(e));
-    }
-  }
-
-  private void saveStates() {
-    val stateFile = FileSystemUtils.getProcessingStateJson();
-    try {
-      FileSystemUtils.writeUtf8Atomic(stateFile, GSON.toJson(states));
-    } catch (Exception e) {
-      LangUtils.err(
-          log,
-          "Errore durante il salvataggio del file di stato in {}: {}",
-          stateFile,
-          LangUtils.exMsg(e));
-    }
-  }
-
-  public void saveSpamConfig() {
-    val spamFile = FileSystemUtils.getSpamAssassinJson();
-    try {
-      FileSystemUtils.writeUtf8Atomic(spamFile, GSON.toJson(spamConfig));
-    } catch (Exception e) {
-      LangUtils.err(
-          log,
-          "Errore durante il salvataggio del file configurazione SPAM {}: {}",
-          spamFile,
-          LangUtils.exMsg(e));
     }
   }
 }

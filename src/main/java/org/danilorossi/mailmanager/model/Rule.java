@@ -205,8 +205,8 @@ public class Rule {
   }
 
   public boolean evaluate(@NonNull final Message message) throws MessagingException {
-    final String left = LangUtils.normalize(getValueToCheck(message));
-    final String right = LangUtils.normalize(conditionValue);
+    final String left = LangUtils.nz(getValueToCheck(message));
+    final String right = LangUtils.nz(conditionValue);
 
     return conditionOperator.test(left, right, caseSensitive);
   }

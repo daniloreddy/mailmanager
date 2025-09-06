@@ -6,6 +6,13 @@
     "configurations": [
         {
             "type": "java",
+            "name": "DemoDbUsage",
+            "request": "launch",
+            "mainClass": "org.danilorossi.mailmanager.jsondb.DemoDbUsage",
+            "projectName": "mailmanager"
+        },
+        {
+            "type": "java",
             "name": "SpamAssassinClient",
             "request": "launch",
             "mainClass": "org.danilorossi.mailmanager.spamassassin.SpamAssassinClient",

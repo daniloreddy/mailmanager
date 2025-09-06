@@ -36,7 +36,8 @@ public class LangUtils {
     return content == null || content.isBlank();
   }
 
-  public static String normalize(final String s) {
+  // normalize null to "" and trim
+  public static String nz(final String s) {
     return s == null ? "" : s.trim();
   }
 
@@ -51,15 +52,15 @@ public class LangUtils {
   }
 
   public static String s(final String format, final Object... values) {
-    if (values == null || values.length == 0) return normalize(format);
+    if (values == null || values.length == 0) return nz(format);
     return String.format(format.replace("{}", "%s"), values);
   }
 
   public static void l(Logger logger, Level level, String format, Throwable t, Object... values) {
     if (logger == null || level == null) return;
     if (values == null || values.length == 0) {
-      if (t == null) logger.log(level, normalize(format));
-      else logger.log(level, normalize(format), t);
+      if (t == null) logger.log(level, nz(format));
+      else logger.log(level, nz(format), t);
     } else {
       if (t == null) logger.log(level, s(format, values));
       else logger.log(level, s(format, values), t);

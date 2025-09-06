@@ -28,6 +28,9 @@ public class FileSystemUtils {
   private static final String RULES_JSON = "rules.json";
   private static final String OFFSETS_JSON = "processing-state.json";
 
+  /** Nome predefinito del file di lock sotto data/. */
+  public static final String LOCK_FILENAME = "mailmanager.lock";
+
   /** Restituisce la cartella "data" dove salvare i file di config. */
   public static Path getDataDir() {
     // 1) Sviluppo: ENV DEV
@@ -68,6 +71,11 @@ public class FileSystemUtils {
   /** Path a uids.json. */
   public static Path getProcessingStateJson() {
     return getDataDir().resolve(OFFSETS_JSON);
+  }
+
+  
+  public static Path getLockFilePath() {
+    return getDataDir().resolve(LOCK_FILENAME);
   }
 
   /** Restituisce un file generico sotto data/. */
