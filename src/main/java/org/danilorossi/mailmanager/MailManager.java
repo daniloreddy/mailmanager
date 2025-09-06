@@ -168,7 +168,7 @@ public class MailManager {
 
   public void processEmails() {
     val maxThreads =
-        !LangUtils.emptyString(System.getenv("DEV"))
+        !LangUtils.empty(System.getenv("DEV"))
             ? 1
             : Math.min(
                 imaps.size(), Math.max(1, Math.min(8, Runtime.getRuntime().availableProcessors())));

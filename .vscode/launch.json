@@ -21,6 +21,17 @@
                 "DEV": "true"
             },
             "args": ""
+        },
+        {
+            "type": "java",
+            "name": "MailManager (TUI)",
+            "request": "launch",
+            "mainClass": "org.danilorossi.mailmanager.MailManager",
+            "projectName": "mailmanager",
+            "env": {
+                "DEV": "true"
+            },
+            "args": "-tui"
         }
     ]
 }

@@ -45,7 +45,7 @@ public class Rule {
 
     switch (actionType) {
       case MOVE -> {
-        if (LangUtils.emptyString(destValue)) {
+        if (LangUtils.empty(destValue)) {
           LangUtils.warn(log, "MOVE senza destValue: regola ignorata");
           return;
         }
@@ -70,7 +70,7 @@ public class Rule {
       }
 
       case COPY -> {
-        if (LangUtils.emptyString(destValue)) {
+        if (LangUtils.empty(destValue)) {
           LangUtils.warn(log, "COPY senza destValue: regola ignorata");
           return;
         }
@@ -111,7 +111,7 @@ public class Rule {
       }
 
       case ADD_LABEL -> {
-        if (LangUtils.emptyString(destValue)) {
+        if (LangUtils.empty(destValue)) {
           LangUtils.warn(log, "ADD_LABEL senza destValue: regola ignorata");
           return;
         }
@@ -128,7 +128,7 @@ public class Rule {
       }
 
       case REMOVE_LABEL -> {
-        if (LangUtils.emptyString(destValue)) {
+        if (LangUtils.empty(destValue)) {
           LangUtils.warn(log, "REMOVE_LABEL senza destValue: regola ignorata");
           return;
         }
@@ -147,8 +147,8 @@ public class Rule {
       case ARCHIVE -> {
         // Se destValue presente, usa quello; altrimenti prova nomi comuni
         val targetName =
-            LangUtils.emptyString(destValue) ? MailUtils.resolveArchiveName(store) : destValue;
-        if (LangUtils.emptyString(targetName)) {
+            LangUtils.empty(destValue) ? MailUtils.resolveArchiveName(store) : destValue;
+        if (LangUtils.empty(targetName)) {
           LangUtils.warn(log, "ARCHIVE: nessuna cartella archivio disponibile");
           return;
         }
@@ -170,7 +170,7 @@ public class Rule {
       }
 
       case FORWARD -> {
-        if (LangUtils.emptyString(destValue)) {
+        if (LangUtils.empty(destValue)) {
           LangUtils.warn(log, "FORWARD senza destValue (indirizzo): regola ignorata");
           return;
         }
@@ -254,6 +254,6 @@ public class Rule {
         conditionOperator,
         conditionValue,
         actionType,
-        (LangUtils.emptyString(destValue) ? "-" : destValue));
+        (LangUtils.empty(destValue) ? "-" : destValue));
   }
 }

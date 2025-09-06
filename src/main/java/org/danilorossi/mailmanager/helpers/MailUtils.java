@@ -71,13 +71,13 @@ public final class MailUtils {
 
     if (part.isMimeType("text/plain")) {
       val txt = getTextPayload(part);
-      if (!LangUtils.emptyString(txt)) appendParagraph(out, cleanText(txt));
+      if (!LangUtils.empty(txt)) appendParagraph(out, cleanText(txt));
       return;
     }
 
     if (part.isMimeType("text/html")) {
       val html = getTextPayload(part);
-      if (!LangUtils.emptyString(html)) appendParagraph(out, htmlToPlainText(html));
+      if (!LangUtils.empty(html)) appendParagraph(out, htmlToPlainText(html));
       return;
     }
 
@@ -85,7 +85,7 @@ public final class MailUtils {
       val content = part.getContent();
       if (content instanceof Multipart mp) {
         val best = pickFromAlternative(mp);
-        if (!LangUtils.emptyString(best)) appendParagraph(out, best);
+        if (!LangUtils.empty(best)) appendParagraph(out, best);
       }
       return;
     }
@@ -130,7 +130,7 @@ public final class MailUtils {
     // Fallback for rare textual types
     if (part.isMimeType("text/*")) {
       val txt = getTextPayload(part);
-      if (!LangUtils.emptyString(txt)) appendParagraph(out, cleanText(txt));
+      if (!LangUtils.empty(txt)) appendParagraph(out, cleanText(txt));
     }
 
     LangUtils.warn(log, "MIME NON GESTITO!");
@@ -139,7 +139,7 @@ public final class MailUtils {
   /* =================== Helpers =================== */
 
   private static void appendParagraph(@NonNull final StringBuilder out, final String text) {
-    if (LangUtils.emptyString(text)) return;
+    if (LangUtils.empty(text)) return;
     if (out.length() > 0 && out.charAt(out.length() - 1) != '\n') out.append('\n');
     out.append(text).append("\n\n");
   }
@@ -189,7 +189,7 @@ public final class MailUtils {
   }
 
   private static String htmlToPlainText(final String html) {
-    if (LangUtils.emptyString(html)) return "";
+    if (LangUtils.empty(html)) return "";
     val doc = Jsoup.parse(html);
     // Preserve logical breaks before extracting text
     doc.select("br").append("\\n");
@@ -236,7 +236,7 @@ public final class MailUtils {
 
       // Inline with filename & non-text content -> likely an embedded resource (image/pdf/etc.)
       val filename = p.getFileName();
-      val hasFileName = !LangUtils.emptyString(filename);
+      val hasFileName = !LangUtils.empty(filename);
       val isTextish = p.isMimeType("text/*") || p.isMimeType("message/*");
       if (hasFileName && !isTextish) return true;
 
@@ -271,7 +271,7 @@ public final class MailUtils {
 
   /** Decodifica un subject RFC 2047 in UTF-8, safe. */
   public static String decodeSubjectSafe(final String raw) {
-    if (LangUtils.emptyString(raw)) return "";
+    if (LangUtils.empty(raw)) return "";
     try {
       return cleanText(MimeUtility.decodeText(raw));
     } catch (Exception e) {

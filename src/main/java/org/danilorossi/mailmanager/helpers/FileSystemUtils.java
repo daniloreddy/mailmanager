@@ -32,11 +32,11 @@ public class FileSystemUtils {
   public static Path getDataDir() {
     // 1) Sviluppo: ENV DEV
     val dev = System.getenv("DEV");
-    if (!LangUtils.emptyString(dev)) return ensureDir(cwd().resolve(DIR_DATA));
+    if (!LangUtils.empty(dev)) return ensureDir(cwd().resolve(DIR_DATA));
 
     // 2) Override esplicito: -Dmailmanager.home=/percorso/custom
     val override = System.getProperty(PROP_HOME);
-    if (!LangUtils.emptyString(override)) return ensureDir(normalize(Paths.get(override)));
+    if (!LangUtils.empty(override)) return ensureDir(normalize(Paths.get(override)));
 
     // 3) Deduci dalla posizione dell'app (jar o classes/)
     try {

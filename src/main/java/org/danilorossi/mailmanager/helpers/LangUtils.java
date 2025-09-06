@@ -21,7 +21,7 @@ public class LangUtils {
   }
 
   public static String nullToSomething(final String s, final String def) {
-    return s == null ? "" : def;
+    return s == null ? def : s;
   }
 
   public static int parseIntOr(final String s, final int def) {
@@ -32,7 +32,7 @@ public class LangUtils {
     }
   }
 
-  public static boolean emptyString(final String content) {
+  public static boolean empty(final String content) {
     return content == null || content.isBlank();
   }
 
@@ -41,7 +41,7 @@ public class LangUtils {
   }
 
   public static String exMsg(@NonNull final Throwable t) {
-    return emptyString(t.getMessage()) ? t.toString() : t.getMessage();
+    return empty(t.getMessage()) ? t.toString() : t.getMessage();
   }
 
   public static String rootCauseMsg(final Throwable t) {

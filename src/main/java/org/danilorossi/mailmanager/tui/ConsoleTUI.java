@@ -29,7 +29,7 @@ public class ConsoleTUI {
     SPAMASSASSIN
   }
 
-  private ImapPanel imapPanel;
+  private ImapsPanel imapPanel;
   private RulesPanel rulesPanel;
   private SpamPanel spamPanel;
 
@@ -44,8 +44,8 @@ public class ConsoleTUI {
     this.mailManager = mailManager;
   }
 
-  private ImapPanel getImapsPanel() {
-    if (imapPanel == null) imapPanel = new ImapPanel(gui, mailManager).build();
+  private ImapsPanel getImapsPanel() {
+    if (imapPanel == null) imapPanel = new ImapsPanel(gui, mailManager).build();
     return imapPanel;
   }
 
@@ -134,8 +134,8 @@ public class ConsoleTUI {
                   handled.set(true);
                 }
                 case Enter -> {
-                  if (tab == ActiveTab.IMAPS) imapPanel.editSelectedItem();
-                  else if (tab == ActiveTab.RULES) rulesPanel.editSelectedItem();
+                  if (tab == ActiveTab.IMAPS) imapPanel.editSelectedItemAction();
+                  else if (tab == ActiveTab.RULES) rulesPanel.editSelectedItemAction();
                   handled.set(true);
                 }
                 case Insert -> {
@@ -161,8 +161,8 @@ public class ConsoleTUI {
                   handled.set(true);
                 }
                 case Delete -> {
-                  if (tab == ActiveTab.IMAPS) imapPanel.delSelectedItem();
-                  else if (tab == ActiveTab.RULES) rulesPanel.delSelectedItem();
+                  if (tab == ActiveTab.IMAPS) imapPanel.delSelectedItemAction();
+                  else if (tab == ActiveTab.RULES) rulesPanel.delSelectedItemAction();
                   handled.set(true);
                 }
                 default -> {

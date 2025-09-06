@@ -135,7 +135,7 @@ public class SpamAssassinClient {
     writer.write((cmd.getVerb() + " SPAMC/1.5\r\n").getBytes(StandardCharsets.US_ASCII));
     writer.write(("Content-length: " + body.length + "\r\n").getBytes(StandardCharsets.US_ASCII));
 
-    if (!LangUtils.emptyString(user))
+    if (!LangUtils.empty(user))
       writer.write(("User: " + user + "\r\n").getBytes(StandardCharsets.US_ASCII));
     // You could add: "Compress: zlib" + compressed body support, etc.
 

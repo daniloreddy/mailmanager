@@ -91,19 +91,18 @@ public class ImapConfig {
 
   /** Validazione essenziale per errori precoce e messaggi chiari. */
   public void validate() throws IllegalArgumentException {
-    if (LangUtils.emptyString(host)) throw new IllegalArgumentException("IMAP host is blank");
-    if (LangUtils.emptyString(username))
-      throw new IllegalArgumentException("IMAP username is blank");
+    if (LangUtils.empty(host)) throw new IllegalArgumentException("IMAP host is blank");
+    if (LangUtils.empty(username)) throw new IllegalArgumentException("IMAP username is blank");
     try {
       val portNum = Integer.parseInt(port);
       if (portNum <= 0 || portNum > 65535) throw new NumberFormatException();
     } catch (NumberFormatException e) {
       throw new IllegalArgumentException(LangUtils.s("IMAP port is invalid: ", port));
     }
-    if (LangUtils.emptyString(inboxFolder))
+    if (LangUtils.empty(inboxFolder))
       throw new IllegalArgumentException("IMAP inboxFolder is blank");
     // Vincolo: se si sceglie MOVE, spamFolder non può essere vuoto
-    if (useSpamAssassin && spamAction == SpamAction.MOVE && LangUtils.emptyString(spamFolder)) {
+    if (useSpamAssassin && spamAction == SpamAction.MOVE && LangUtils.empty(spamFolder)) {
       throw new IllegalArgumentException("Spam folder is blank while action is MOVE");
     }
   }
