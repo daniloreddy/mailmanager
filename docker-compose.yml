@@ -1,0 +1,16 @@
+services:
+  mailmanager:
+    build: .
+    volumes:
+      - ./data:/app/data
+    environment:
+      - MAILMANAGER_MODE=headless
+      - SPAMASSASSIN_HOST=spamassassin
+    restart: unless-stopped
+    depends_on:
+      - spamassassin
+
+  spamassassin:
+    image: instantlinux/spamassassin:latest
+    restart: unless-stopped
+    # spamd runs on port 783 by default
