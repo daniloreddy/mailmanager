@@ -19,9 +19,8 @@ IMAP rule-based email sorter with SpamAssassin integration. Headless processing 
 ## Quick Start
 
 ### Docker (Recommended)
-1. Clone the repository.
-2. Create a `data` directory: `mkdir data`.
-3. Start the services:
+1. Download `docker-compose.yml`.
+2. Start the services:
    ```bash
    docker-compose up -d
    ```
@@ -31,7 +30,7 @@ IMAP rule-based email sorter with SpamAssassin integration. Headless processing 
    ```bash
    pip install -r requirements.txt
    ```
-2. Run the TUI to configure your first account:
+2. Run the TUI to configure accounts:
    ```bash
    python main.py -tui
    ```
@@ -39,6 +38,32 @@ IMAP rule-based email sorter with SpamAssassin integration. Headless processing 
    ```bash
    python main.py
    ```
+
+## Usage Modes
+
+### Interactive UI (TUI)
+Used for initial configuration of IMAP servers and rules.
+
+*   **Docker**: 
+    ```bash
+    docker run -it --rm -v ./data:/app/data -e MAILMANAGER_MODE=tui ghcr.io/daniloreddy/mailmanager:main
+    ```
+*   **Local**:
+    ```bash
+    python main.py -tui
+    ```
+
+### Headless (Background)
+The default mode for automated processing.
+
+*   **Docker**:
+    ```bash
+    docker-compose up -d
+    ```
+*   **Local**:
+    ```bash
+    python main.py
+    ```
 
 ## Configuration
 

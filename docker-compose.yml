@@ -1,6 +1,6 @@
 services:
   mailmanager:
-    build: .
+    image: ghcr.io/daniloreddy/mailmanager:main
     volumes:
       - ./data:/app/data
     environment:
@@ -13,4 +13,3 @@ services:
   spamassassin:
     image: instantlinux/spamassassin:latest
     restart: unless-stopped
-    # spamd runs on port 783 by default

@@ -13,7 +13,13 @@ Project: IMAP rule-based email sorter + SpamAssassin integration. Headless or TU
   - tui.py: MailManagerApp (Textual placeholder)
 - data/
   - imap-servers.json, rules.json (50+ rules), spam-assassin.json, processing-state.json, mailmanager.lock
-- mypy.ini, requirements*.txt, analyze.{cmd,sh}
+- mypy.ini, requirements*.txt, analyze.{cmd,sh}, Dockerfile, docker-compose.yml
+
+## Deployment
+- Registry: ghcr.io/daniloreddy/mailmanager
+- CI/CD: GitHub Action (.github/workflows/docker-publish.yml)
+- Persistence: Volume mount to /app/data (SQLite + logs)
+- Modes: Controlled via MAILMANAGER_MODE (headless/tui) and SPAMASSASSIN_HOST env vars
 
 ## Dependencies
 requirements.txt: pydantic>=2, imapclient>=3, textual>=0.50, portalocker>=2.8
