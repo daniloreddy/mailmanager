@@ -85,6 +85,24 @@ class SpamAssassinConfig(BaseModel):
     readTimeoutMillis: int = 5000
 
 
+class LoggingLevel(str, Enum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+
+
+class LoggingConfig(BaseModel):
+    level: LoggingLevel = LoggingLevel.INFO
+    maxBytes: int = 10_485_760
+    backupCount: int = 5
+
+
+class SchedulerConfig(BaseModel):
+    enabled: bool = True
+    intervalSeconds: int = 300
+
+
 class State(BaseModel):
     imapConfigName: str
     folder: str

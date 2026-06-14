@@ -2,6 +2,7 @@ import email
 import logging
 import re
 import smtplib
+from email.header import decode_header, make_header
 from email.message import EmailMessage
 from typing import List, Optional, Union
 from imapclient import IMAPClient
@@ -20,6 +21,13 @@ from .db import Db
 from .spamassassin import SpamAssassinClient
 
 logger = logging.getLogger(__name__)
+
+
+def _decode_header(value: str) -> str:
+    try:
+        return str(make_header(decode_header(value)))
+    except Exception:
+        return value
 
 
 class ProcessingService:
@@ -169,6 +177,16 @@ class ProcessingService:
         left = self._get_value_to_check(rule.conditionSubject, msg)
         right = rule.conditionValue
 
+        # REGEX must use re.IGNORECASE flag only — lowercasing the pattern corrupts
+        # escape sequences like \S→\s, \D→\d, \W→\w.
+        if rule.conditionOperator == ConditionOperator.REGEX:
+            flags = 0 if rule.caseSensitive else re.IGNORECASE
+            try:
+                return bool(re.search(right, left, flags))
+            except re.error as exc:
+                logger.warning(f"Rule {rule.id}: invalid regex '{right}': {exc}")
+                return False
+
         if not rule.caseSensitive:
             left = left.lower()
             right = right.lower()
@@ -185,9 +203,6 @@ class ProcessingService:
             return left.startswith(right)
         elif rule.conditionOperator == ConditionOperator.ENDS_WITH:
             return left.endswith(right)
-        elif rule.conditionOperator == ConditionOperator.REGEX:
-            flags = 0 if rule.caseSensitive else re.IGNORECASE
-            return bool(re.search(right, left, flags))
 
         return False
 
@@ -195,15 +210,15 @@ class ProcessingService:
         self, subject: ConditionSubject, msg: email.message.Message
     ) -> str:
         if subject == ConditionSubject.SUBJECT:
-            return str(msg.get("Subject", ""))
+            return _decode_header(str(msg.get("Subject", "")))
         elif subject == ConditionSubject.FROM:
-            return str(msg.get("From", ""))
+            return _decode_header(str(msg.get("From", "")))
         elif subject == ConditionSubject.TO:
-            return str(msg.get("To", ""))
+            return _decode_header(str(msg.get("To", "")))
         elif subject == ConditionSubject.CC:
-            return str(msg.get("Cc", ""))
+            return _decode_header(str(msg.get("Cc", "")))
         elif subject == ConditionSubject.BCC:
-            return str(msg.get("Bcc", ""))
+            return _decode_header(str(msg.get("Bcc", "")))
         elif subject == ConditionSubject.MESSAGE:
             body = ""
             if msg.is_multipart():
@@ -211,11 +226,13 @@ class ProcessingService:
                     if part.get_content_type() == "text/plain":
                         payload = part.get_payload(decode=True)
                         if isinstance(payload, bytes):
-                            body += payload.decode(errors="replace")
+                            charset = part.get_content_charset() or "utf-8"
+                            body += payload.decode(charset, errors="replace")
             else:
                 payload = msg.get_payload(decode=True)
                 if isinstance(payload, bytes):
-                    body = payload.decode(errors="replace")
+                    charset = msg.get_content_charset() or "utf-8"
+                    body = payload.decode(charset, errors="replace")
             return body
         return ""
 
@@ -233,11 +250,19 @@ class ProcessingService:
                     client.create_folder(rule.destValue)
                 client.copy(uid, rule.destValue)
                 client.add_flags(uid, [b"\\Deleted"])
+            else:
+                logger.warning(
+                    f"Rule {rule.id}: MOVE has no destValue, skipping UID {uid}"
+                )
         elif rule.actionType == ActionType.COPY:
             if rule.destValue:
                 if not client.folder_exists(rule.destValue):
                     client.create_folder(rule.destValue)
                 client.copy(uid, rule.destValue)
+            else:
+                logger.warning(
+                    f"Rule {rule.id}: COPY has no destValue, skipping UID {uid}"
+                )
         elif rule.actionType == ActionType.DELETE:
             client.add_flags(uid, [b"\\Deleted"])
         elif rule.actionType == ActionType.MARK_READ:
@@ -248,10 +273,28 @@ class ProcessingService:
             client.add_flags(uid, [b"\\Flagged"])
         elif rule.actionType == ActionType.ADD_LABEL:
             if rule.destValue:
-                client.add_flags(uid, [rule.destValue.encode("ascii")])
+                try:
+                    client.add_flags(uid, [rule.destValue.encode("ascii")])
+                except (UnicodeEncodeError, ValueError):
+                    logger.warning(
+                        f"Rule {rule.id}: ADD_LABEL destValue contains non-ASCII: '{rule.destValue}'"
+                    )
+            else:
+                logger.warning(
+                    f"Rule {rule.id}: ADD_LABEL has no destValue, skipping UID {uid}"
+                )
         elif rule.actionType == ActionType.REMOVE_LABEL:
             if rule.destValue:
-                client.remove_flags(uid, [rule.destValue.encode("ascii")])
+                try:
+                    client.remove_flags(uid, [rule.destValue.encode("ascii")])
+                except (UnicodeEncodeError, ValueError):
+                    logger.warning(
+                        f"Rule {rule.id}: REMOVE_LABEL destValue contains non-ASCII: '{rule.destValue}'"
+                    )
+            else:
+                logger.warning(
+                    f"Rule {rule.id}: REMOVE_LABEL has no destValue, skipping UID {uid}"
+                )
         elif rule.actionType == ActionType.ARCHIVE:
             target = rule.destValue or "Archive"
             if not client.folder_exists(target):
@@ -261,6 +304,10 @@ class ProcessingService:
         elif rule.actionType == ActionType.FORWARD:
             if rule.destValue and config.smtpHost:
                 self._forward_message(msg, rule.destValue, config)
+            elif not rule.destValue:
+                logger.warning(
+                    f"Rule {rule.id}: FORWARD has no destValue, skipping UID {uid}"
+                )
         elif rule.actionType == ActionType.STOP:
             pass
 

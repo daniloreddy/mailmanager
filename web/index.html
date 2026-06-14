@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MailManager</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f0f2f5; --surface: #fff; --border: #dde1e7;
+  --primary: #2563eb; --primary-h: #1d4ed8;
+  --danger: #dc2626; --danger-h: #b91c1c;
+  --success: #16a34a; --warn: #d97706;
+  --text: #1e293b; --muted: #64748b;
+  --radius: 8px; --shadow: 0 1px 3px rgba(0,0,0,.1);
+}
+body { font-family: system-ui,-apple-system,sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+.hidden { display: none !important; }
+
+#app { max-width: 1100px; margin: 0 auto; padding: 16px; }
+header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+header h1 { font-size: 1.4rem; font-weight: 700; }
+
+nav { display: flex; gap: 4px; }
+nav button { padding: 8px 16px; border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius); cursor: pointer; font-size: 14px; color: var(--muted); }
+nav button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+nav button:hover:not(.active) { background: var(--bg); }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
+.card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 16px; }
+
+.status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.stat-card .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .05em; }
+.stat-card .value { font-size: 1.1rem; font-weight: 600; }
+.value.ok { color: var(--success); }
+.value.err { color: var(--danger); }
+
+.table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+th { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--bg); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f8fafc; }
+.actions { display: flex; gap: 6px; }
+
+button { cursor: pointer; }
+.btn { padding: 8px 14px; border-radius: var(--radius); font-size: 13px; font-weight: 500; border: 1px solid transparent; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-h); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { background: var(--danger-h); }
+.btn-ghost { background: none; border-color: var(--border); color: var(--text); }
+.btn-ghost:hover { background: var(--bg); }
+.btn-run { background: var(--success); color: #fff; }
+.btn-run:hover { background: #15803d; }
+.btn-run:disabled { background: #86efac; cursor: not-allowed; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal-box { background: var(--surface); border-radius: var(--radius); box-shadow: 0 4px 24px rgba(0,0,0,.2); width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto; padding: 24px; }
+.modal-box h2 { margin-bottom: 20px; font-size: 1.1rem; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group.full { grid-column: 1/-1; }
+.section-sep { grid-column: 1/-1; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--border); padding-bottom: 4px; margin-top: 6px; }
+label { font-size: 12px; font-weight: 500; color: var(--muted); }
+input[type=text], input[type=password], input[type=number], select {
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; width: 100%; background: var(--surface);
+}
+input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+input:disabled { background: var(--bg); color: var(--muted); }
+.check-row { grid-column: 1/-1; display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.check-row input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; }
+.check-row label { font-size: 14px; color: var(--text); font-weight: 400; cursor: pointer; }
+
+.settings-grid { display: grid; gap: 16px; }
+.settings-form { display: grid; gap: 10px; }
+
+.badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+.badge-green { background: #dcfce7; color: #15803d; }
+.badge-red { background: #fee2e2; color: #b91c1c; }
+.badge-gray { background: #f1f5f9; color: var(--muted); }
+
+#toast { position: fixed; bottom: 24px; right: 24px; background: #1e293b; color: #fff; padding: 12px 20px; border-radius: var(--radius); font-size: 13px; opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 200; max-width: 340px; }
+#toast.show { opacity: 1; }
+
+.auth-box { background: var(--surface); border-radius: var(--radius); padding: 32px; width: 360px; box-shadow: 0 4px 24px rgba(0,0,0,.15); }
+.auth-box h2 { margin-bottom: 8px; text-align: center; }
+.auth-box p { color: var(--muted); margin-bottom: 24px; font-size: 13px; text-align: center; }
+.empty { text-align: center; color: var(--muted); padding: 24px 0; }
+.error-banner { background: #fef2f2; border: 1px solid #fca5a5; color: #b91c1c; border-radius: var(--radius); padding: 12px 16px; margin-bottom: 12px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="auth-overlay" class="overlay hidden">
+  <div class="auth-box">
+    <h2>MailManager</h2>
+    <p>Enter your API token to connect, or leave empty for local access.</p>
+    <input type="password" id="token-input" placeholder="API Token (optional)" style="width:100%;margin-bottom:12px" onkeydown="if(event.key==='Enter')connectWithToken()">
+    <button class="btn btn-primary" style="width:100%" onclick="connectWithToken()">Connect</button>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <h1>MailManager</h1>
+    <nav>
+      <button id="tab-status" onclick="switchTab('status')">Status</button>
+      <button id="tab-imap" onclick="switchTab('imap')">IMAP</button>
+      <button id="tab-rules" onclick="switchTab('rules')">Rules</button>
+      <button id="tab-settings" onclick="switchTab('settings')">Settings</button>
+    </nav>
+  </header>
+  <div id="pane-status" class="pane"></div>
+  <div id="pane-imap" class="pane hidden"></div>
+  <div id="pane-rules" class="pane hidden"></div>
+  <div id="pane-settings" class="pane hidden"></div>
+</div>
+
+<div id="modal" class="overlay hidden">
+  <div class="modal-box">
+    <h2 id="modal-title"></h2>
+    <div id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+const S = {
+  token: localStorage.getItem('mm_token') || '',
+  tab: 'status',
+  pollTimer: null,
+  modal: { type: null, id: null },
+  configs: [],
+  rules: [],
+};
+
+// ── API ────────────────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (S.token) headers['Authorization'] = 'Bearer ' + S.token;
+  try {
+    const res = await fetch('/api' + path, {
+      method,
+      headers,
+      body: body != null ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 401) { showAuth(); return null; }
+    if (res.status === 204) return true;
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast('Error: ' + (err.detail || 'HTTP ' + res.status), true);
+      return null;
+    }
+    return res.json();
+  } catch (e) {
+    toast('Network error: ' + e.message, true);
+    return null;
+  }
+}
+
+// ── Auth ───────────────────────────────────────────────────────────────────────
+function showAuth() {
+  clearInterval(S.pollTimer);
+  document.getElementById('auth-overlay').classList.remove('hidden');
+  document.getElementById('app').classList.add('hidden');
+}
+
+function connectWithToken() {
+  const t = document.getElementById('token-input').value.trim();
+  S.token = t;
+  t ? localStorage.setItem('mm_token', t) : localStorage.removeItem('mm_token');
+  document.getElementById('auth-overlay').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  switchTab(S.tab);
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg, err = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.background = err ? '#dc2626' : '#1e293b';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── Tabs ───────────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  clearInterval(S.pollTimer);
+  S.tab = tab;
+  document.querySelectorAll('.pane').forEach(p => p.classList.add('hidden'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('pane-' + tab).classList.remove('hidden');
+  document.getElementById('tab-' + tab).classList.add('active');
+  ({ status: loadStatus, imap: loadImap, rules: loadRules, settings: loadSettings })[tab]();
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function fmt(epoch) { return epoch ? new Date(epoch * 1000).toLocaleString() : '—'; }
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function badge(v, yes, no, yc, nc) { return `<span class="badge ${v ? yc : nc}">${v ? yes : no}</span>`; }
+
+// ── Status ─────────────────────────────────────────────────────────────────────
+async function loadStatus() {
+  await refreshStatus();
+  S.pollTimer = setInterval(refreshStatus, 5000);
+}
+
+async function refreshStatus() {
+  const s = await api('GET', '/scheduler/status');
+  if (!s) return;
+  document.getElementById('pane-status').innerHTML = `
+    <div class="status-grid">
+      <div class="stat-card"><div class="label">Status</div>
+        <div class="value ${s.is_running ? 'ok' : ''}">${s.is_running ? '● Running' : '○ Idle'}</div></div>
+      <div class="stat-card"><div class="label">Total Runs</div><div class="value">${s.run_count}</div></div>
+      <div class="stat-card"><div class="label">Last Run</div><div class="value" style="font-size:.85rem">${fmt(s.last_run_at)}</div></div>
+      <div class="stat-card"><div class="label">Next Run</div><div class="value" style="font-size:.85rem">${fmt(s.next_run_at)}</div></div>
+    </div>
+    ${s.last_error ? `<div class="error-banner"><strong>Last error:</strong> ${esc(s.last_error)}</div>` : ''}
+    <button class="btn btn-run" onclick="runNow()" ${s.is_running ? 'disabled' : ''}>▶ Run Now</button>`;
+}
+
+async function runNow() {
+  const r = await api('POST', '/scheduler/run');
+  if (r) { toast('Run triggered'); refreshStatus(); }
+}
+
+// ── IMAP ───────────────────────────────────────────────────────────────────────
+async function loadImap() {
+  const cfgs = await api('GET', '/configs');
+  if (!cfgs) return;
+  S.configs = cfgs;
+  const rows = cfgs.length
+    ? cfgs.map(c => `<tr>
+        <td><strong>${esc(c.name)}</strong></td>
+        <td>${esc(c.host)}:${esc(c.port)}</td>
+        <td>${esc(c.username)}</td>
+        <td>${badge(c.ssl,'SSL','Plain','badge-green','badge-gray')}</td>
+        <td>${badge(c.useSpamAssassin,'On','Off','badge-green','badge-gray')}</td>
+        <td class="actions">
+          <button class="btn btn-ghost btn-sm" onclick='editImap(${JSON.stringify(c.name)})'>Edit</button>
+          <button class="btn btn-danger btn-sm" onclick='deleteImap(${JSON.stringify(c.name)})'>Delete</button>
+        </td></tr>`).join('')
+    : '<tr><td colspan="6" class="empty">No configurations</td></tr>';
+  document.getElementById('pane-imap').innerHTML = `<div class="card">
+    <div class="table-header"><h3>IMAP Configurations</h3>
+      <button class="btn btn-primary btn-sm" onclick="openImapModal()">+ Add</button></div>
+    <table><thead><tr><th>Name</th><th>Host</th><th>Username</th><th>SSL</th><th>Spam</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+function imapFields(c = {}) {
+  return [
+    { sep: 'Connection' },
+    { name:'name', label:'Name', type:'text', value:c.name||'', required:true, disabled:!!c.name },
+    { name:'host', label:'Host', type:'text', value:c.host||'', required:true },
+    { name:'port', label:'Port', type:'text', value:c.port||'993' },
+    { name:'username', label:'Username', type:'text', value:c.username||'' },
+    { name:'password', label:'Password', type:'password', value:c.password||'' },
+    { name:'inboxFolder', label:'Inbox Folder', type:'text', value:c.inboxFolder||'INBOX' },
+    { name:'ssl', label:'SSL', type:'checkbox', value:c.ssl!==false },
+    { name:'auth', label:'Auth', type:'checkbox', value:c.auth!==false },
+    { sep: 'Spam' },
+    { name:'useSpamAssassin', label:'Use SpamAssassin', type:'checkbox', value:!!c.useSpamAssassin },
+    { name:'spamAction', label:'Spam Action', type:'select', value:c.spamAction||'DELETE', options:['DELETE','MOVE','MARK_AS_READ'] },
+    { name:'spamFolder', label:'Spam Folder', type:'text', value:c.spamFolder||'Junk' },
+    { sep: 'Timeouts (ms)' },
+    { name:'connectionTimeoutMs', label:'Connect', type:'number', value:c.connectionTimeoutMs||15000 },
+    { name:'readTimeoutMs', label:'Read', type:'number', value:c.readTimeoutMs||30000 },
+    { name:'writeTimeoutMs', label:'Write', type:'number', value:c.writeTimeoutMs||15000 },
+    { sep: 'SMTP (for forwarding)' },
+    { name:'smtpHost', label:'Host', type:'text', value:c.smtpHost||'' },
+    { name:'smtpPort', label:'Port', type:'text', value:c.smtpPort||'587' },
+    { name:'smtpUsername', label:'Username', type:'text', value:c.smtpUsername||'' },
+    { name:'smtpPassword', label:'Password', type:'password', value:c.smtpPassword||'' },
+    { name:'smtpSsl', label:'SSL', type:'checkbox', value:!!c.smtpSsl },
+    { name:'smtpAuth', label:'Auth', type:'checkbox', value:c.smtpAuth!==false },
+  ];
+}
+
+function openImapModal() { openModal('Add IMAP Config', imapFields(), 'imap', null); }
+function editImap(name) {
+  const c = S.configs.find(x => x.name === name);
+  if (c) openModal('Edit IMAP Config', imapFields(c), 'imap', name);
+}
+async function deleteImap(name) {
+  if (!confirm(`Delete "${name}"?`)) return;
+  if (await api('DELETE', '/configs/' + encodeURIComponent(name))) { toast('Deleted'); loadImap(); }
+}
+
+// ── Rules ──────────────────────────────────────────────────────────────────────
+async function loadRules() {
+  const [rls, cfgs] = await Promise.all([api('GET', '/rules'), api('GET', '/configs')]);
+  if (!rls || !cfgs) return;
+  S.rules = rls; S.configs = cfgs;
+  const rows = rls.length
+    ? rls.map(r => `<tr>
+        <td>${esc(r.imapConfigName)}</td>
+        <td>${r.conditionSubject}</td>
+        <td>${r.conditionOperator}</td>
+        <td>${esc(r.conditionValue)}</td>
+        <td>${r.actionType}</td>
+        <td>${esc(r.destValue||'')}</td>
+        <td class="actions">
+          <button class="btn btn-ghost btn-sm" onclick="editRule(${r.id})">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteRule(${r.id})">Delete</button>
+        </td></tr>`).join('')
+    : '<tr><td colspan="7" class="empty">No rules</td></tr>';
+  document.getElementById('pane-rules').innerHTML = `<div class="card">
+    <div class="table-header"><h3>Rules</h3>
+      <button class="btn btn-primary btn-sm" onclick="openRuleModal()">+ Add</button></div>
+    <table><thead><tr><th>Account</th><th>Field</th><th>Operator</th><th>Value</th><th>Action</th><th>Dest</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+function ruleFields(r = {}) {
+  const names = S.configs.map(c => c.name);
+  return [
+    { name:'imapConfigName', label:'Account', type:'select', value:r.imapConfigName||names[0]||'', options:names, full:true },
+    { name:'conditionSubject', label:'Field', type:'select', value:r.conditionSubject||'FROM', options:['FROM','SUBJECT','TO','CC','BCC','MESSAGE'] },
+    { name:'conditionOperator', label:'Operator', type:'select', value:r.conditionOperator||'CONTAINS', options:['CONTAINS','NOT_CONTAINS','EQUALS','NOT_EQUALS','STARTS_WITH','ENDS_WITH','REGEX'] },
+    { name:'conditionValue', label:'Value', type:'text', value:r.conditionValue||'', full:true },
+    { name:'actionType', label:'Action', type:'select', value:r.actionType||'MOVE', options:['MOVE','COPY','DELETE','MARK_READ','MARK_UNREAD','FLAG','ADD_LABEL','REMOVE_LABEL','ARCHIVE','FORWARD','STOP'] },
+    { name:'destValue', label:'Destination / Label', type:'text', value:r.destValue||'', full:true },
+    { name:'caseSensitive', label:'Case Sensitive', type:'checkbox', value:!!r.caseSensitive, full:true },
+  ];
+}
+
+function openRuleModal() { openModal('Add Rule', ruleFields(), 'rule', null); }
+function editRule(id) {
+  const r = S.rules.find(x => x.id === id);
+  if (r) openModal('Edit Rule', ruleFields(r), 'rule', id);
+}
+async function deleteRule(id) {
+  if (!confirm('Delete this rule?')) return;
+  if (await api('DELETE', '/rules/' + id)) { toast('Deleted'); loadRules(); }
+}
+
+// ── Settings ───────────────────────────────────────────────────────────────────
+async function loadSettings() {
+  const [spam, sched, log] = await Promise.all([
+    api('GET', '/spam'), api('GET', '/scheduler/config'), api('GET', '/logging/config'),
+  ]);
+  if (!spam || !sched || !log) return;
+
+  document.getElementById('pane-settings').innerHTML = `<div class="settings-grid">
+    ${settingsCard('SpamAssassin', 'spam', [
+      { name:'enabled', label:'Enabled', type:'checkbox', value:spam.enabled },
+      { name:'host', label:'Host', type:'text', value:spam.host },
+      { name:'port', label:'Port', type:'number', value:spam.port },
+      { name:'user', label:'User (optional)', type:'text', value:spam.user||'' },
+      { name:'connectTimeoutMillis', label:'Connect Timeout (ms)', type:'number', value:spam.connectTimeoutMillis },
+      { name:'readTimeoutMillis', label:'Read Timeout (ms)', type:'number', value:spam.readTimeoutMillis },
+    ])}
+    ${settingsCard('Scheduler', 'scheduler-config', [
+      { name:'enabled', label:'Enabled', type:'checkbox', value:sched.enabled },
+      { name:'intervalSeconds', label:'Interval (seconds)', type:'number', value:sched.intervalSeconds },
+    ])}
+    ${settingsCard('Logging', 'logging-config', [
+      { name:'level', label:'Level', type:'select', value:log.level, options:['DEBUG','INFO','WARNING','ERROR'] },
+      { name:'maxBytes', label:'Max File Size (bytes)', type:'number', value:log.maxBytes },
+      { name:'backupCount', label:'Backup Files', type:'number', value:log.backupCount },
+    ])}
+  </div>`;
+}
+
+function settingsCard(title, key, fields) {
+  const pathMap = { spam:'/spam', 'scheduler-config':'/scheduler/config', 'logging-config':'/logging/config' };
+  const body = fields.map(f => {
+    if (f.type === 'checkbox') return `<div class="check-row"><input type="checkbox" id="sf-${key}-${f.name}" name="${f.name}" ${f.value?'checked':''}><label for="sf-${key}-${f.name}">${f.label}</label></div>`;
+    if (f.type === 'select') return `<div class="form-group"><label>${f.label}</label><select name="${f.name}" id="sf-${key}-${f.name}">${f.options.map(o=>`<option value="${o}"${o===f.value?' selected':''}>${o}</option>`).join('')}</select></div>`;
+    return `<div class="form-group"><label>${f.label}</label><input type="${f.type}" name="${f.name}" id="sf-${key}-${f.name}" value="${esc(f.value??'')}"></div>`;
+  }).join('');
+  return `<div class="card"><h3>${title}</h3>
+    <form class="settings-form" id="sf-${key}" onsubmit="saveSettings('${key}','${pathMap[key]}',event)">
+      ${body}
+      <div><button type="submit" class="btn btn-primary btn-sm">Save</button></div>
+    </form></div>`;
+}
+
+async function saveSettings(key, path, e) {
+  e.preventDefault();
+  const data = formToObj(document.getElementById('sf-' + key));
+  if (await api('PUT', path, data)) toast('Saved');
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────────
+function buildForm(fields) {
+  return '<div class="form-grid">' + fields.map(f => {
+    if (f.sep) return `<div class="section-sep">${f.sep}</div>`;
+    const cls = f.full ? ' full' : '';
+    if (f.type === 'checkbox') return `<div class="check-row${cls}"><input type="checkbox" id="mf-${f.name}" name="${f.name}" ${f.value?'checked':''}><label for="mf-${f.name}">${f.label}</label></div>`;
+    if (f.type === 'select') return `<div class="form-group${cls}"><label>${f.label}</label><select name="${f.name}" id="mf-${f.name}">${(f.options||[]).map(o=>`<option value="${o}"${o===f.value?' selected':''}>${o}</option>`).join('')}</select></div>`;
+    return `<div class="form-group${cls}"><label>${f.label}${f.required?' *':''}</label><input type="${f.type}" name="${f.name}" id="mf-${f.name}" value="${esc(f.value??'')}"${f.disabled?' disabled':''}${f.required?' required':''}></div>`;
+  }).join('') + '</div>';
+}
+
+function openModal(title, fields, type, id) {
+  S.modal = { type, id, fields };
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = buildForm(fields);
+  document.getElementById('modal').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+}
+
+async function submitModal() {
+  const { type, id } = S.modal;
+  const data = formToObj(document.getElementById('modal-body'));
+  let r;
+  if (type === 'imap') {
+    r = id ? await api('PUT', '/configs/' + encodeURIComponent(id), data) : await api('POST', '/configs', data);
+    if (r) { toast(id ? 'Updated' : 'Created'); closeModal(); loadImap(); }
+  } else if (type === 'rule') {
+    r = id ? await api('PUT', '/rules/' + id, data) : await api('POST', '/rules', data);
+    if (r) { toast(id ? 'Updated' : 'Created'); closeModal(); loadRules(); }
+  }
+}
+
+// ── Util ───────────────────────────────────────────────────────────────────────
+function formToObj(container) {
+  const obj = {};
+  container.querySelectorAll('input,select').forEach(el => {
+    if (!el.name || el.disabled) return;
+    if (el.type === 'checkbox') obj[el.name] = el.checked;
+    else if (el.type === 'number') obj[el.name] = el.value === '' ? null : Number(el.value);
+    else obj[el.name] = el.value;
+  });
+  return obj;
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+(async function init() {
+  const headers = S.token ? { 'Authorization': 'Bearer ' + S.token } : {};
+  const res = await fetch('/api/scheduler/status', { headers }).catch(() => null);
+  if (!res || res.status === 401) {
+    showAuth();
+  } else {
+    document.getElementById('app').classList.remove('hidden');
+    switchTab('status');
+  }
+})();
+</script>
+</body>
+</html>

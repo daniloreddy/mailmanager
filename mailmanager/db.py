@@ -3,7 +3,14 @@ import sqlite3
 import logging
 from pathlib import Path
 from typing import List, Dict
-from .models import ImapConfig, Rule, SpamAssassinConfig, State
+from .models import (
+    ImapConfig,
+    Rule,
+    SpamAssassinConfig,
+    State,
+    SchedulerConfig,
+    LoggingConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +26,8 @@ class Db:
     def _init_db(self):
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
+            c.execute("PRAGMA journal_mode=WAL")
+            c.execute("PRAGMA busy_timeout=5000")
             c.execute("""CREATE TABLE IF NOT EXISTS imap_configs (
                 name TEXT PRIMARY KEY,
                 data TEXT
@@ -33,6 +42,14 @@ class Db:
             )""")
             c.execute("""CREATE TABLE IF NOT EXISTS states (
                 key TEXT PRIMARY KEY,
+                data TEXT
+            )""")
+            c.execute("""CREATE TABLE IF NOT EXISTS scheduler_config (
+                id INTEGER PRIMARY KEY,
+                data TEXT
+            )""")
+            c.execute("""CREATE TABLE IF NOT EXISTS logging_config (
+                id INTEGER PRIMARY KEY,
                 data TEXT
             )""")
 
@@ -95,7 +112,7 @@ class Db:
     def load_rules(self) -> List[Rule]:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
-            c.execute("SELECT id, data FROM rules")
+            c.execute("SELECT id, data FROM rules ORDER BY id ASC")
             rows = c.fetchall()
         rules = []
         for row_id, data_str in rows:
@@ -104,7 +121,7 @@ class Db:
             rules.append(rule)
         return rules
 
-    def save_rule(self, rule: Rule):
+    def save_rule(self, rule: Rule) -> Rule:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             data = json.dumps(rule.model_dump(exclude={"id"}, exclude_none=True))
@@ -112,6 +129,8 @@ class Db:
                 c.execute("UPDATE rules SET data = ? WHERE id = ?", (data, rule.id))
             else:
                 c.execute("INSERT INTO rules (data) VALUES (?)", (data,))
+                rule.id = c.lastrowid
+        return rule
 
     def delete_rule(self, rule_id: int):
         with sqlite3.connect(self.db_path) as conn:
@@ -147,3 +166,37 @@ class Db:
         states = self.load_states()
         states[state.key()] = state
         self.save_states(states)
+
+    def load_scheduler_config(self) -> SchedulerConfig:
+        with sqlite3.connect(self.db_path) as conn:
+            c = conn.cursor()
+            c.execute("SELECT data FROM scheduler_config WHERE id=1")
+            row = c.fetchone()
+        if row:
+            return SchedulerConfig(**json.loads(row[0]))
+        return SchedulerConfig()
+
+    def save_scheduler_config(self, config: SchedulerConfig):
+        with sqlite3.connect(self.db_path) as conn:
+            c = conn.cursor()
+            c.execute(
+                "INSERT OR REPLACE INTO scheduler_config (id, data) VALUES (1, ?)",
+                (json.dumps(config.model_dump()),),
+            )
+
+    def load_logging_config(self) -> LoggingConfig:
+        with sqlite3.connect(self.db_path) as conn:
+            c = conn.cursor()
+            c.execute("SELECT data FROM logging_config WHERE id=1")
+            row = c.fetchone()
+        if row:
+            return LoggingConfig(**json.loads(row[0]))
+        return LoggingConfig()
+
+    def save_logging_config(self, config: LoggingConfig):
+        with sqlite3.connect(self.db_path) as conn:
+            c = conn.cursor()
+            c.execute(
+                "INSERT OR REPLACE INTO logging_config (id, data) VALUES (1, ?)",
+                (json.dumps(config.model_dump()),),
+            )

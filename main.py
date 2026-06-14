@@ -1,80 +1,74 @@
-import sys
-import argparse
-import portalocker
 import logging
 import os
+import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+import portalocker
+import uvicorn
+
 from mailmanager.db import Db
-from mailmanager.processing import ProcessingService
-from mailmanager.tui import MailManagerApp
+from mailmanager.models import LoggingConfig
+from mailmanager.scheduler import SchedulerService
+from mailmanager.server import create_app
 
 
-def configure_logging():
-    log_file = Path("data/mailmanager.log")
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler(sys.stdout),
-        ],
+def configure_logging(cfg: LoggingConfig) -> None:
+    log_dir = Path("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    root = logging.getLogger()
+    root.setLevel(cfg.level.value)
+    root.handlers.clear()
+
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
-
-def main():
-    parser = argparse.ArgumentParser(description="MailManager in Python")
-    parser.add_argument("-tui", action="store_true", help="Run the Textual UI")
-    parser.add_argument("-imap", action="store_true", help="Run the Textual UI (alias)")
-    parser.add_argument(
-        "-rules", action="store_true", help="Run the Textual UI (alias)"
+    file_handler = RotatingFileHandler(
+        log_dir / "mailmanager.log",
+        maxBytes=cfg.maxBytes,
+        backupCount=cfg.backupCount,
     )
-    args = parser.parse_args()
+    file_handler.setFormatter(formatter)
 
-    # Environment variables
-    mode = os.environ.get("MAILMANAGER_MODE", "headless").lower()
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(formatter)
+
+    root.addHandler(file_handler)
+    root.addHandler(stream_handler)
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    api_key = os.environ.get("MAILMANAGER_API_KEY")
+    host = "0.0.0.0" if api_key else "127.0.0.1"
+    port = int(os.environ.get("MAILMANAGER_PORT", "8080"))
     sa_host = os.environ.get("SPAMASSASSIN_HOST")
 
-    # Single instance lock
     lock_file = Path("data/mailmanager.lock")
     lock_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-
-    configure_logging()
-    logger = logging.getLogger(__name__)
 
     try:
         with portalocker.Lock(lock_file, timeout=1):
             db = Db("data")
+            configure_logging(db.load_logging_config())
+            logger = logging.getLogger(__name__)
 
-            # Auto-configure SpamAssassin host
             if sa_host:
-                config = db.load_spam_config()
-                if config.host != sa_host:
+                spam_cfg = db.load_spam_config()
+                if spam_cfg.host != sa_host:
                     logger.info(f"Updating SpamAssassin host to {sa_host}")
-                    config.host = sa_host
-                    db.save_spam_config(config)
+                    spam_cfg.host = sa_host
+                    db.save_spam_config(spam_cfg)
 
-            if args.tui or args.imap or args.rules or mode == "tui":
-                app = MailManagerApp(db=db)
-                app.run()
-                return
+            scheduler = SchedulerService(db)
+            app = create_app(db, scheduler)
 
-            # Headless processing
-            spam_config = db.load_spam_config()
-            imaps = db.load_imaps()
-            rules = db.load_rules()
-
-            if not imaps:
-                logger.warning(
-                    "No IMAP configurations found. Configure them via UI or DB."
-                )
-                return
-
-            service = ProcessingService(db, rules, spam_config)
-
-            for imap in imaps:
-                service.process_account(imap)
+            logger.info(f"Starting MailManager on {host}:{port}")
+            uvicorn.run(app, host=host, port=port, workers=1)
 
     except portalocker.exceptions.LockException:
         logger.error("MailManager is already running.")
