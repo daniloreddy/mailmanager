@@ -23,8 +23,6 @@ RUN mkdir -p data logs
 VOLUME /app/data
 VOLUME /app/logs
 
-ENV SPAMASSASSIN_HOST=spamassassin
-
 EXPOSE 8080
 
 ENTRYPOINT ["python", "main.py"]

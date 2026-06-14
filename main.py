@@ -46,7 +46,6 @@ def main() -> None:
     api_key = os.environ.get("MAILMANAGER_API_KEY")
     host = "0.0.0.0" if api_key else "127.0.0.1"
     port = int(os.environ.get("MAILMANAGER_PORT", "8080"))
-    sa_host = os.environ.get("SPAMASSASSIN_HOST")
 
     lock_file = Path("data/mailmanager.lock")
     lock_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -56,13 +55,6 @@ def main() -> None:
             db = Db("data")
             configure_logging(db.load_logging_config())
             logger = logging.getLogger(__name__)
-
-            if sa_host:
-                spam_cfg = db.load_spam_config()
-                if spam_cfg.host != sa_host:
-                    logger.info(f"Updating SpamAssassin host to {sa_host}")
-                    spam_cfg.host = sa_host
-                    db.save_spam_config(spam_cfg)
 
             scheduler = SchedulerService(db)
             app = create_app(db, scheduler)
