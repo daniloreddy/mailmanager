@@ -1,11 +1,15 @@
 services:
   mailmanager:
     image: ghcr.io/daniloreddy/mailmanager:main
+    ports:
+      - "8080:8080"
     volumes:
       - ./data:/app/data
+      - ./logs:/app/logs
     environment:
-      - MAILMANAGER_MODE=headless
       - SPAMASSASSIN_HOST=spamassassin
+      # - MAILMANAGER_API_KEY=changeme
+      # - MAILMANAGER_PORT=8080
     restart: unless-stopped
     depends_on:
       - spamassassin
