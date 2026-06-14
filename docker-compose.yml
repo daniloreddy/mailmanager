@@ -2,7 +2,7 @@ services:
   mailmanager:
     # image: ghcr.io/daniloreddy/mailmanager:main
     build: .
-    container_name: candle-graph
+    container_name: mailmanager
     restart: unless-stopped
     ports:
       - "8080:8080"
