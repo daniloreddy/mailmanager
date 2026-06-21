@@ -104,7 +104,7 @@ logs/
 - Registry: `ghcr.io/daniloreddy/mailmanager`
 - CI/CD: `.github/workflows/docker-publish.yml` (triggers on push to main and tags)
 - Volumes: `/app/data` (SQLite + lock), `/app/logs` (log files)
-- Env vars: `MAILMANAGER_API_KEY` (enables network bind + auth), `MAILMANAGER_PORT` (default 8080), `SPAMASSASSIN_HOST`
+- Env vars: `MAILMANAGER_API_KEY`, `MAILMANAGER_PORT`, `AUTH_SECURE_COOKIE`, `TRUSTED_PROXIES` (see Key invariants)
 
 ## Key invariants
 
