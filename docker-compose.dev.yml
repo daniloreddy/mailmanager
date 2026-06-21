@@ -1,8 +1,8 @@
 services:
   mailmanager:
-    image: ghcr.io/daniloreddy/mailmanager:latest
-    container_name: mailmanager
-    restart: unless-stopped
+    build: .
+    container_name: mailmanager-dev
+    restart: "no"
     ports:
       - "8080:8080"
     volumes:
