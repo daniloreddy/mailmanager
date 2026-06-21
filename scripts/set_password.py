@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""CLI to set the MailManager login password."""
+import getpass
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from app.auth import AuthManager
+
+
+def main() -> None:
+    auth = AuthManager(
+        auth_file=Path("data/auth.json"),
+        cookie_name="mailmanager_session",
+    )
+    password = getpass.getpass("New password: ")
+    confirm = getpass.getpass("Confirm password: ")
+    if not password:
+        print("Password cannot be empty.")
+        sys.exit(1)
+    if password != confirm:
+        print("Passwords do not match.")
+        sys.exit(1)
+    auth.set_password(password)
+    print("Password set successfully.")
+
+
+if __name__ == "__main__":
+    main()

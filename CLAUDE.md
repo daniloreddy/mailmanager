@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-IMAP rule-based email sorter with SpamAssassin integration. Runs as a long-lived daemon: HTTP server (FastAPI) + background scheduler that processes mail at a configurable interval. Web UI served at `/`.
+IMAP rule-based email sorter with SpamAssassin integration. Runs as a long-lived daemon: FastAPI server + NiceGUI web UI + background scheduler. UI served by NiceGUI mounted into FastAPI via `ui.run_with()`.
 
 ## Commands
 
@@ -32,6 +32,8 @@ scripts/analyze.sh                     # Unix
 
 ```
 main.py                  Entry: portalocker lock → configure_logging → uvicorn.run (workers=1)
+app/
+  auth.py                AuthManager: cookie-based session auth (scrypt + JWT), brute-force protection
 mailmanager/
   models.py              Pydantic v2: Rule, ImapConfig, SpamAssassinConfig, SchedulerConfig,
                          LoggingConfig, State + Enums
@@ -39,7 +41,8 @@ mailmanager/
   processing.py          ProcessingService: IMAP fetch → spam check → rule eval → action (sync)
   spamassassin.py        SpamAssassinClient: raw SPAMC/1.5 socket protocol
   scheduler.py           SchedulerService: asyncio loop, runs ProcessingService in thread executor
-  server.py              FastAPI app factory: lifespan (start/stop scheduler), auth, static files
+  server.py              FastAPI app factory: lifespan (start/stop scheduler), auth middleware,
+                         NiceGUI mount via ui.run_with()
   api/
     deps.py              get_db / get_scheduler FastAPI dependencies
     configs.py           GET/POST/PUT/DELETE /api/configs
@@ -47,10 +50,19 @@ mailmanager/
     spam.py              GET/PUT /api/spam
     scheduler.py         GET /api/scheduler/status, POST /api/scheduler/run, GET/PUT /api/scheduler/config
     logging_config.py    GET/PUT /api/logging/config (applies level change immediately)
-web/
-  index.html             SPA: vanilla JS, 4 tabs (Status / IMAP / Rules / Settings)
+  ui/
+    theme.py             base_layout() context manager: header, sidebar, footer, dark/light toggle
+    components.py        metric_card(), status_badge() reusable NiceGUI components
+    pages/
+      status.py          @ui.page("/")  — scheduler status + Run Now button, auto-refresh 5s
+      imap.py            @ui.page("/imap") — IMAP config CRUD
+      rules.py           @ui.page("/rules") — rule CRUD
+      settings.py        @ui.page("/settings") — spam + scheduler + logging config
+static/
+  login.html             Self-contained login page (used when MAILMANAGER_API_KEY is set)
 data/
   mailmanager.db         SQLite (imap_configs, rules, spam_config, scheduler_config, logging_config, states)
+  auth.json              Password hash + JWT secret (auto-created; gitignored)
   mailmanager.lock       portalocker single-instance guard
 logs/
   mailmanager.log        RotatingFileHandler output
@@ -103,5 +115,5 @@ logs/
 - `text/html` email bodies are NOT matched by MESSAGE rules (only `text/plain` decoded)
 - STOP action type halts the rule chain but takes no action on the message
 - camelCase JSON keys in SQLite JSON columns (Pydantic field aliases)
-- Auth: if `MAILMANAGER_API_KEY` unset → 127.0.0.1 only, no token check; if set → 0.0.0.0, Bearer token required on all `/api/*`
+- Auth: if `MAILMANAGER_API_KEY` unset → 127.0.0.1 only, no auth; if set → 0.0.0.0, cookie session (AuthManager) on UI + Bearer token on `/api/*`; `_BYPASS_PREFIXES` excludes `/_nicegui/` and `/api/` from the cookie middleware
 - Logging level change via API takes effect immediately; maxBytes/backupCount take effect on next restart

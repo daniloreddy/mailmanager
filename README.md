@@ -1,19 +1,20 @@
 # MailManager
 
-IMAP rule-based email sorter with SpamAssassin integration. Headless processing or TUI management.
+IMAP rule-based email sorter with SpamAssassin integration. Runs as a daemon: FastAPI backend + NiceGUI web UI + background scheduler.
 
 ## Features
-- **Rule-based Sorting**: Move, copy, delete, or forward emails based on FROM, SUBJECT, or MESSAGE content.
+- **Rule-based Sorting**: Move, copy, delete, flag, or forward emails based on FROM, SUBJECT, TO, CC, BCC, or MESSAGE content.
 - **Spam Detection**: Integrated SpamAssassin support via SPAMC protocol.
 - **State Tracking**: IMAP UID tracking to avoid redundant processing.
-- **Dual Mode**: Interactive Textual UI (TUI) for configuration and headless mode for automation.
-- **Docker Ready**: Easy deployment with isolated environments per account group.
+- **Web UI**: NiceGUI interface with Status, IMAP, Rules, and Settings tabs.
+- **Auth**: Cookie-based session auth when `MAILMANAGER_API_KEY` is set.
+- **Docker Ready**: Easy deployment with isolated environments.
 
 ## How it Works
 1. **Fetch**: Connects to IMAP servers using UID state tracking.
 2. **Scan**: (Optional) Checks messages against SpamAssassin.
-3. **Evaluate**: Processes rules sequentially.
-4. **Action**: Executes defined actions (MOVE, FORWARD, etc.) on matching emails.
+3. **Evaluate**: Processes rules sequentially; first match wins.
+4. **Action**: Executes defined actions (MOVE, COPY, DELETE, FORWARD, etc.) on matching emails.
 5. **Persist**: Stores configuration and state in a local SQLite database.
 
 ## Quick Start
@@ -24,60 +25,46 @@ IMAP rule-based email sorter with SpamAssassin integration. Headless processing 
    ```bash
    docker-compose up -d
    ```
+3. Open `http://localhost:8080` in your browser.
 
 ### Manual Installation
-1. Install dependencies:
+1. Create venv and install dependencies:
    ```bash
-   pip install -r requirements.txt
+   python -m venv venv
+   ./venv/Scripts/pip install -r requirements.txt
    ```
-2. Run the TUI to configure accounts:
+2. Run:
    ```bash
-   python main.py -tui
+   ./venv/Scripts/python main.py
    ```
-3. Run headless for continuous processing:
-   ```bash
-   python main.py
-   ```
+3. Open `http://127.0.0.1:8080` in your browser.
 
-## Usage Modes
+## Environment Variables
 
-### Interactive UI (TUI)
-Used for initial configuration of IMAP servers and rules.
+| Variable | Default | Description |
+|---|---|---|
+| `MAILMANAGER_API_KEY` | _(unset)_ | If set: binds `0.0.0.0`, enables cookie auth (set password via `scripts/set_password.py`) |
+| `MAILMANAGER_PORT` | `8080` | HTTP port |
+| `SPAMASSASSIN_HOST` | `127.0.0.1` | SpamAssassin hostname |
+| `AUTH_SECURE_COOKIE` | _(unset)_ | Set to `1` to force Secure cookie flag |
 
-*   **Docker**: 
-    ```bash
-    docker run -it --rm -v ./data:/app/data -e MAILMANAGER_MODE=tui ghcr.io/daniloreddy/mailmanager:main
-    ```
-*   **Local**:
-    ```bash
-    python main.py -tui
-    ```
+When `MAILMANAGER_API_KEY` is **not** set, the server binds `127.0.0.1` only and no authentication is required.
 
-### Headless (Background)
-The default mode for automated processing.
+## First-run with Auth
 
-*   **Docker**:
-    ```bash
-    docker-compose up -d
-    ```
-*   **Local**:
-    ```bash
-    python main.py
-    ```
-
-## Configuration
-
-### Environment Variables
-- `MAILMANAGER_MODE`: `headless` (default) or `tui`.
-- `SPAMASSASSIN_HOST`: Hostname of the SpamAssassin server (default: `spamassassin` in Docker, `127.0.0.1` local).
-
-### Volumes
-In Docker, mount your local data folder to `/app/data` to persist settings and email state:
-```yaml
-volumes:
-  - ./my_config:/app/data
+```bash
+export MAILMANAGER_API_KEY=your-secret-key
+python scripts/set_password.py   # set login password
+python main.py
 ```
 
 ## Development
-- **Lint/Type Check**: Run `analyze.sh` (or `analyze.cmd` on Windows).
-- **Tests**: `pytest tests`.
+
+- **Lint/Type Check**: `scripts/analyze.cmd` (Windows) / `scripts/analyze.sh` (Unix)
+- **Tests**: `./venv/Scripts/pytest tests/`
+
+## Deployment
+
+- Registry: `ghcr.io/daniloreddy/mailmanager`
+- CI/CD: `.github/workflows/docker-publish.yml` (triggers on push to main and tags)
+- Volumes: `/app/data` (SQLite + lock), `/app/logs` (log files)
