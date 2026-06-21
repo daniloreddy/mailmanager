@@ -38,11 +38,19 @@ services:
 
 ### 2. Set the login password
 
+**First time** (container not running):
+
 ```bash
 docker run --rm -it \
   -v ./data:/app/data \
   ghcr.io/daniloreddy/mailmanager:latest \
   python scripts/set_password.py
+```
+
+**To change it** (container already running):
+
+```bash
+docker exec -it mailmanager python scripts/set_password.py
 ```
 
 ### 3. Start
