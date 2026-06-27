@@ -1,7 +1,6 @@
 import logging
 import os
 import sys
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import portalocker
@@ -14,9 +13,6 @@ from mailmanager.server import create_app
 
 
 def configure_logging(cfg: LoggingConfig) -> None:
-    log_dir = Path("logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-
     root = logging.getLogger()
     root.setLevel(cfg.level.value)
     root.handlers.clear()
@@ -25,18 +21,9 @@ def configure_logging(cfg: LoggingConfig) -> None:
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
-    file_handler = RotatingFileHandler(
-        log_dir / "mailmanager.log",
-        maxBytes=cfg.maxBytes,
-        backupCount=cfg.backupCount,
-    )
-    file_handler.setFormatter(formatter)
-
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(formatter)
-
-    root.addHandler(file_handler)
-    root.addHandler(stream_handler)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
 
 
 def main() -> None:

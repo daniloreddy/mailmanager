@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 from nicegui import app as nicegui_app
 from nicegui import ui
@@ -9,65 +9,70 @@ from ..theme import base_layout
 _SPAM_ACTIONS = [a.value for a in SpamAction]
 
 
-def _imap_form(cfg: Optional[ImapConfig] = None) -> dict:
-    """Render IMAP form fields and return dict of element references."""
+def _imap_form(cfg: Optional[ImapConfig] = None) -> dict[str, Any]:
     is_edit = cfg is not None
     c = cfg or ImapConfig()
-    refs: dict = {}
+    refs: dict[str, Any] = {}
 
     def _sep(title: str) -> None:
-        ui.label(title).style(
-            "font-size:11px; font-weight:600; color:var(--muted);"
-            " text-transform:uppercase; letter-spacing:.06em;"
-            " border-bottom:1px solid #2A2A2A; padding-bottom:4px; margin-top:8px;"
-        ).classes("full-width")
-
-    def _row(*items) -> None:  # type: ignore[no-untyped-def]
-        with ui.row().classes("w-full gap-3"):
-            for fn in items:
-                fn()
+        ui.label(title).classes(
+            "text-caption text-grey-6 text-uppercase q-mt-sm q-mb-xs full-width"
+        )
+        ui.separator()
 
     _sep("Connection")
-    with ui.grid(columns=2).classes("w-full gap-3"):
+    with ui.grid(columns=2).classes("full-width").style("gap:12px;"):
         refs["name"] = ui.input("Name *", value=c.name).classes("col-span-1")
         if is_edit:
             refs["name"].props("readonly")
         refs["host"] = ui.input("Host *", value=c.host).classes("col-span-1")
         refs["port"] = ui.input("Port", value=c.port).classes("col-span-1")
-        refs["inboxFolder"] = ui.input("Inbox Folder", value=c.inboxFolder).classes("col-span-1")
+        refs["inboxFolder"] = ui.input("Inbox Folder", value=c.inboxFolder).classes(
+            "col-span-1"
+        )
         refs["username"] = ui.input("Username", value=c.username).classes("col-span-1")
-        refs["password"] = ui.input("Password", value=c.password, password=True, password_toggle_button=True).classes("col-span-1")
-    with ui.row().classes("w-full gap-4"):
+        refs["password"] = ui.input(
+            "Password", value=c.password, password=True, password_toggle_button=True
+        ).classes("col-span-1")
+    with ui.row().classes("full-width q-gutter-md"):
         refs["ssl"] = ui.checkbox("SSL", value=c.ssl)
         refs["auth"] = ui.checkbox("Auth", value=c.auth)
 
     _sep("Spam")
-    with ui.grid(columns=2).classes("w-full gap-3"):
-        refs["spamAction"] = ui.select(_SPAM_ACTIONS, value=c.spamAction.value, label="Spam Action")
+    with ui.grid(columns=2).classes("full-width").style("gap:12px;"):
+        refs["spamAction"] = ui.select(
+            _SPAM_ACTIONS, value=c.spamAction.value, label="Spam Action"
+        )
         refs["spamFolder"] = ui.input("Spam Folder", value=c.spamFolder)
-    with ui.row().classes("w-full"):
-        refs["useSpamAssassin"] = ui.checkbox("Use SpamAssassin", value=c.useSpamAssassin)
+    with ui.row().classes("full-width"):
+        refs["useSpamAssassin"] = ui.checkbox(
+            "Use SpamAssassin", value=c.useSpamAssassin
+        )
 
     _sep("Timeouts (ms)")
-    with ui.grid(columns=3).classes("w-full gap-3"):
-        refs["connectionTimeoutMs"] = ui.number("Connect", value=c.connectionTimeoutMs, min=0)
+    with ui.grid(columns=3).classes("full-width").style("gap:12px;"):
+        refs["connectionTimeoutMs"] = ui.number(
+            "Connect", value=c.connectionTimeoutMs, min=0
+        )
         refs["readTimeoutMs"] = ui.number("Read", value=c.readTimeoutMs, min=0)
         refs["writeTimeoutMs"] = ui.number("Write", value=c.writeTimeoutMs, min=0)
 
     _sep("SMTP (for forwarding)")
-    with ui.grid(columns=2).classes("w-full gap-3"):
+    with ui.grid(columns=2).classes("full-width").style("gap:12px;"):
         refs["smtpHost"] = ui.input("Host", value=c.smtpHost)
         refs["smtpPort"] = ui.input("Port", value=c.smtpPort)
         refs["smtpUsername"] = ui.input("Username", value=c.smtpUsername)
-        refs["smtpPassword"] = ui.input("Password", value=c.smtpPassword, password=True, password_toggle_button=True)
-    with ui.row().classes("w-full gap-4"):
+        refs["smtpPassword"] = ui.input(
+            "Password", value=c.smtpPassword, password=True, password_toggle_button=True
+        )
+    with ui.row().classes("full-width q-gutter-md"):
         refs["smtpSsl"] = ui.checkbox("SSL", value=c.smtpSsl)
         refs["smtpAuth"] = ui.checkbox("Auth", value=c.smtpAuth)
 
     return refs
 
 
-def _refs_to_imap(refs: dict) -> ImapConfig:
+def _refs_to_imap(refs: dict[str, Any]) -> ImapConfig:
     def _int(v: object) -> int:
         return int(str(v)) if v is not None else 0
 
@@ -103,9 +108,9 @@ async def imap_page() -> None:
     def imap_table() -> None:
         configs = db.load_imaps()
 
-        with ui.card().classes("w-full"):
+        with ui.card().classes("full-width"):
             with ui.row().classes("justify-between items-center q-mb-md"):
-                ui.label("IMAP Configurations").classes("text-h6 text-grey-3")
+                ui.label("IMAP Configurations").classes("text-h6")
                 ui.button("+ Add", on_click=lambda: open_dialog()).props(
                     "color=primary size=sm"
                 )
@@ -116,9 +121,8 @@ async def imap_page() -> None:
                 )
                 return
 
-            with ui.row().classes("q-px-sm q-py-xs text-grey-6 full-width").style(
-                "border-bottom:1px solid #2A2A2A; font-size:11px;"
-                " text-transform:uppercase; font-weight:600;"
+            with ui.row().classes(
+                "q-px-sm q-py-xs text-grey-6 full-width text-caption text-uppercase text-weight-bold"
             ):
                 ui.label("Name").style("width:140px;")
                 ui.label("Host").style("width:200px;")
@@ -126,48 +130,48 @@ async def imap_page() -> None:
                 ui.label("SSL").style("width:55px;")
                 ui.label("Spam").style("width:55px;")
                 ui.label("").style("width:100px;")
+            ui.separator()
 
             for c in configs:
-                with ui.row().classes("items-center q-px-sm q-py-xs full-width").style(
-                    "border-bottom:1px solid #2A2A2A;"
-                ):
-                    ui.label(c.name).style(
-                        "width:140px; font-weight:600; color:var(--text);"
+                with ui.row().classes("items-center q-px-sm q-py-xs full-width"):
+                    ui.label(c.name).classes("text-weight-bold").style("width:140px;")
+                    ui.label(f"{c.host}:{c.port}").classes("text-grey-6").style(
+                        "width:200px;"
                     )
-                    ui.label(f"{c.host}:{c.port}").style(
-                        "width:200px; color:var(--muted);"
+                    ui.label(c.username).classes("text-grey-6").style("flex:1;")
+                    _badge(
+                        "SSL" if c.ssl else "Plain", "ok" if c.ssl else "off", "55px"
                     )
-                    ui.label(c.username).style("flex:1; color:var(--muted);")
-                    _badge("SSL" if c.ssl else "Plain", "ok" if c.ssl else "gray", "55px")
-                    _badge("On" if c.useSpamAssassin else "Off", "ok" if c.useSpamAssassin else "gray", "55px")
-                    with ui.row().style("width:100px;").classes("gap-1"):
+                    _badge(
+                        "On" if c.useSpamAssassin else "Off",
+                        "ok" if c.useSpamAssassin else "off",
+                        "55px",
+                    )
+                    with ui.row().style("width:100px;").classes("q-gutter-xs"):
                         ui.button("Edit", on_click=lambda c=c: open_dialog(c)).props(
                             "flat size=sm"
                         )
                         ui.button(
-                            "Del",
-                            on_click=lambda c=c: confirm_delete(c.name),
+                            "Del", on_click=lambda c=c: confirm_delete(c.name)
                         ).props("flat size=sm color=negative")
+                ui.separator()
 
     def _badge(text: str, kind: str, width: str) -> None:
-        styles = {
-            "ok":   "background:#1B3A2F; color:#80CBC4;",
-            "gray": "background:#1E1E1E; color:#616161;",
-        }
-        s = styles.get(kind, styles["gray"])
-        ui.label(text).style(
-            f"width:{width}; padding:2px 6px; border-radius:4px;"
-            f" font-size:11px; font-weight:600; {s}"
-        )
+        color = "positive" if kind == "ok" else "grey"
+        with ui.element("div").style(
+            f"width:{width}; display:flex; align-items:center;"
+        ):
+            ui.badge(text).props(f"color={color}")
 
     async def open_dialog(cfg: Optional[ImapConfig] = None) -> None:
         is_edit = cfg is not None
         title = "Edit IMAP Config" if is_edit else "Add IMAP Config"
 
-        with ui.dialog() as dialog, ui.card().style(
-            "width:620px; max-height:85vh; overflow-y:auto;"
+        with (
+            ui.dialog() as dialog,
+            ui.card().style("width:620px; max-height:85vh; overflow-y:auto;"),
         ):
-            ui.label(title).classes("text-h6 text-grey-3 q-mb-sm")
+            ui.label(title).classes("text-h6 q-mb-sm")
             refs = _imap_form(cfg)
 
             async def save() -> None:
@@ -183,7 +187,7 @@ async def imap_page() -> None:
                 except Exception as exc:
                     ui.notify(f"Error: {exc}", type="negative")
 
-            with ui.row().classes("justify-end q-mt-md gap-2"):
+            with ui.row().classes("justify-end q-mt-md q-gutter-xs"):
                 ui.button("Cancel", on_click=dialog.close).props("flat")
                 ui.button("Save", on_click=save).props("color=primary")
 
@@ -192,7 +196,7 @@ async def imap_page() -> None:
     async def confirm_delete(name: str) -> None:
         with ui.dialog() as dlg, ui.card():
             ui.label(f'Delete "{name}"?').classes("text-h6 q-mb-md")
-            with ui.row().classes("justify-end gap-2"):
+            with ui.row().classes("justify-end q-gutter-xs"):
                 ui.button("Cancel", on_click=dlg.close).props("flat")
 
                 async def do_delete() -> None:
@@ -204,5 +208,6 @@ async def imap_page() -> None:
                 ui.button("Delete", on_click=do_delete).props("color=negative")
         dlg.open()
 
-    with base_layout("/imap"):
-        imap_table()
+    with base_layout("IMAP"):
+        with ui.column().classes("full-width").style("padding:1.25rem;"):
+            imap_table()

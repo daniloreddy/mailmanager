@@ -51,7 +51,8 @@ mailmanager/
     scheduler.py         GET /api/scheduler/status, POST /api/scheduler/run, GET/PUT /api/scheduler/config
     logging_config.py    GET/PUT /api/logging/config (applies level change immediately)
   ui/
-    theme.py             base_layout() context manager: header, sidebar, footer, dark/light toggle
+    theme.py             _page_setup() / _header() / _footer() / base_layout() context manager:
+                         icon-nav header (bg-primary), dark/light toggle, no sidebar
     components.py        metric_card(), status_badge() reusable NiceGUI components
     pages/
       status.py          @ui.page("/")  — scheduler status + Run Now button, auto-refresh 5s
@@ -64,8 +65,6 @@ data/
   mailmanager.db         SQLite (imap_configs, rules, spam_config, scheduler_config, logging_config, states)
   auth.json              Password hash + JWT secret (auto-created; gitignored)
   mailmanager.lock       portalocker single-instance guard
-logs/
-  mailmanager.log        RotatingFileHandler output
 ```
 
 ### Processing flow (ProcessingService.process_account)
@@ -103,7 +102,7 @@ logs/
 
 - Registry: `ghcr.io/daniloreddy/mailmanager`
 - CI/CD: `.github/workflows/docker-publish.yml` (triggers on push to main and tags)
-- Volumes: `/app/data` (SQLite + lock), `/app/logs` (log files)
+- Volumes: `/app/data` (SQLite + lock)
 - Env vars: `MAILMANAGER_API_KEY`, `MAILMANAGER_PORT`, `AUTH_SECURE_COOKIE`, `TRUSTED_PROXIES` (see Key invariants)
 
 ## Key invariants
@@ -116,4 +115,4 @@ logs/
 - STOP action type halts the rule chain but takes no action on the message
 - camelCase JSON keys in SQLite JSON columns (Pydantic field aliases)
 - Auth: if `MAILMANAGER_API_KEY` unset → 127.0.0.1 only, no auth; if set → 0.0.0.0, cookie session (AuthManager) on UI + Bearer token on `/api/*`; `_BYPASS_PREFIXES` excludes `/_nicegui/` and `/api/` from the cookie middleware
-- Logging level change via API takes effect immediately; maxBytes/backupCount take effect on next restart
+- Logging: stdout only (captured by `docker compose logs`); level change via API takes effect immediately

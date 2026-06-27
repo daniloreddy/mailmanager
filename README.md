@@ -19,6 +19,12 @@ mkdir mailmanager && cd mailmanager
 mkdir data logs
 ```
 
+Copy `.env.example` to `.env` and fill in values:
+
+```bash
+cp .env.example .env   # then edit .env
+```
+
 Create `docker-compose.yml`:
 
 ```yaml
@@ -29,11 +35,13 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-    environment:
-      - MAILMANAGER_API_KEY=changeme
 ```
 
 ### 2. Set the login password
@@ -104,7 +112,7 @@ python -m venv venv
 
 - **Lint/Type Check**: `scripts/analyze.cmd` (Windows) / `scripts/analyze.sh` (Unix)
 - **Tests**: `./venv/Scripts/pytest tests/`
-- **Dev Docker**: `docker compose -f docker-compose.dev.yml up` (builds locally)
+- **Dev Docker**: `docker compose -f docker-compose-dev.yml up --build` (builds locally)
 
 ---
 
@@ -112,4 +120,5 @@ python -m venv venv
 
 - Registry: `ghcr.io/daniloreddy/mailmanager`
 - CI/CD: `.github/workflows/docker-publish.yml` (triggers on push to main and tags)
-- Volumes: `/app/data` (SQLite + auth config), `/app/logs` (log files)
+- Volumes: `/app/data` (SQLite + auth config)
+- Logs: stdout → `docker compose logs -f mailmanager`

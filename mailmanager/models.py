@@ -94,8 +94,6 @@ class LoggingLevel(str, Enum):
 
 class LoggingConfig(BaseModel):
     level: LoggingLevel = LoggingLevel.INFO
-    maxBytes: int = 10_485_760
-    backupCount: int = 5
 
 
 class SchedulerConfig(BaseModel):

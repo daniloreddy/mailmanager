@@ -1,12 +1,32 @@
 #!/usr/bin/env python3
 """CLI to set the MailManager login password."""
-import getpass
+import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+_ROOT = Path(__file__).parent.parent
+_VENV_PYTHON = _ROOT / "venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
 
-from app.auth import AuthManager
+
+def _bootstrap() -> None:
+    if not _VENV_PYTHON.exists():
+        print("Creating venv...")
+        subprocess.run([sys.executable, "-m", "venv", str(_ROOT / "venv")], check=True)
+        subprocess.run(
+            [str(_VENV_PYTHON), "-m", "pip", "install", "-r", str(_ROOT / "requirements.txt")],
+            check=True,
+        )
+    if Path(sys.executable).resolve() != _VENV_PYTHON.resolve():
+        sys.exit(subprocess.run([str(_VENV_PYTHON), *sys.argv]).returncode)
+
+
+_bootstrap()
+
+import getpass  # noqa: E402
+
+sys.path.insert(0, str(_ROOT))
+
+from app.auth import AuthManager  # noqa: E402
 
 
 def main() -> None:

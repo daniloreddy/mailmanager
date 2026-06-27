@@ -19,9 +19,7 @@ ENV PYTHONUNBUFFERED=1
 
 COPY . .
 
-RUN mkdir -p data logs
-VOLUME /app/data
-VOLUME /app/logs
+RUN mkdir -p data
 
 EXPOSE 8080
 

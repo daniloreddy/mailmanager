@@ -1,9 +1,14 @@
 @echo off
-if exist venv\Scripts\activate.bat (
-    call venv\Scripts\activate.bat
-) else if exist .venv\Scripts\activate.bat (
-    call .venv\Scripts\activate.bat
+cd /d "%~dp0.."
+
+if not exist venv\Scripts\activate.bat (
+    echo Creating venv...
+    python -m venv venv
+    venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt
+    if %errorlevel% neq 0 exit /b %errorlevel%
 )
+
+call venv\Scripts\activate.bat
 
 echo Running Ruff check...
 ruff check .
