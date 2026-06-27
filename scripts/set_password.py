@@ -5,13 +5,14 @@ import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
-_VENV_PYTHON = _ROOT / "venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+_VENV_DIR = _ROOT / ("venv" if sys.platform == "win32" else ".venv")
+_VENV_PYTHON = _VENV_DIR / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
 
 
 def _bootstrap() -> None:
     if not _VENV_PYTHON.exists():
         print("Creating venv...")
-        subprocess.run([sys.executable, "-m", "venv", str(_ROOT / "venv")], check=True)
+        subprocess.run([sys.executable, "-m", "venv", str(_VENV_DIR)], check=True)
         subprocess.run(
             [str(_VENV_PYTHON), "-m", "pip", "install", "-r", str(_ROOT / "requirements.txt")],
             check=True,
