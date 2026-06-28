@@ -3,7 +3,13 @@ import logging
 from nicegui import app as nicegui_app
 from nicegui import ui
 
-from ...models import LoggingConfig, LoggingLevel, SchedulerConfig, SpamAssassinConfig
+from ...models import (
+    LoggingConfig,
+    LoggingLevel,
+    SchedulerConfig,
+    SpamAssassinConfig,
+    UiConfig,
+)
 from ..theme import base_layout
 
 _LOG_LEVELS = [lv.value for lv in LoggingLevel]
@@ -17,6 +23,7 @@ async def settings_page() -> None:
     spam = db.load_spam_config()
     sched = db.load_scheduler_config()
     log = db.load_logging_config()
+    ui_cfg = db.load_ui_config()
 
     with base_layout("Settings"):
         with ui.column().classes("full-width").style("padding:1.25rem; gap:1rem;"):
@@ -97,4 +104,32 @@ async def settings_page() -> None:
                     except Exception as exc:
                         ui.notify(f"Error: {exc}", type="negative")
 
-                ui.button("Save", on_click=save_log).props("color=primary size=sm").classes("q-mt-sm")
+                ui.button("Save", on_click=save_log).props(
+                    "color=primary size=sm"
+                ).classes("q-mt-sm")
+
+            # ── UI ─────────────────────────────────────────────────────
+            with ui.card().classes("full-width q-pa-md"):
+                ui.label("UI").classes("text-h6 q-mb-md")
+
+                ui_refresh_enabled = ui.checkbox(
+                    "Auto-refresh dashboards", value=ui_cfg.autoRefreshEnabled
+                )
+                ui_refresh_secs = ui.number(
+                    "Refresh interval (seconds)", value=ui_cfg.autoRefreshSeconds, min=1
+                ).classes("q-mt-sm")
+
+                async def save_ui() -> None:
+                    try:
+                        cfg = UiConfig(
+                            autoRefreshEnabled=bool(ui_refresh_enabled.value),
+                            autoRefreshSeconds=int(ui_refresh_secs.value or 30),
+                        )
+                        db.save_ui_config(cfg)
+                        ui.notify("Saved", type="positive")
+                    except Exception as exc:
+                        ui.notify(f"Error: {exc}", type="negative")
+
+                ui.button("Save", on_click=save_ui).props(
+                    "color=primary size=sm"
+                ).classes("q-mt-sm")

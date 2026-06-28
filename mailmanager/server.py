@@ -70,6 +70,7 @@ def create_app(db: Db, scheduler: SchedulerService) -> FastAPI:
     # NiceGUI page handlers receive request.app = nicegui's core.app (not this app),
     # so we attach db/scheduler to nicegui's app.state for page handler access.
     from nicegui import app as nicegui_app
+
     nicegui_app.state.db = db
     nicegui_app.state.scheduler = scheduler
 
@@ -99,9 +100,7 @@ def create_app(db: Db, scheduler: SchedulerService) -> FastAPI:
             return FileResponse(_STATIC_ROOT / "login.html")
 
         @app.post("/auth/login")
-        async def auth_login(
-            request: Request, password: str = Form(...)
-        ) -> Response:
+        async def auth_login(request: Request, password: str = Form(...)) -> Response:
             ip = auth.client_ip(
                 dict(request.headers),
                 request.client.host if request.client else None,

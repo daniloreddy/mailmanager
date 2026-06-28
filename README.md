@@ -6,7 +6,7 @@ IMAP rule-based email sorter with SpamAssassin integration. Runs as a daemon: Fa
 - **Rule-based Sorting**: Move, copy, delete, flag, or forward emails based on FROM, SUBJECT, TO, CC, BCC, or MESSAGE content.
 - **Spam Detection**: Integrated SpamAssassin support via SPAMC protocol.
 - **State Tracking**: IMAP UID tracking to avoid redundant processing.
-- **Web UI**: NiceGUI interface with Status, IMAP, Rules, and Settings tabs.
+- **Web UI**: NiceGUI interface with Status, IMAP, Rules, and Settings tabs (auto-refresh interval configurable).
 - **Auth**: Cookie-based session auth when `MAILMANAGER_API_KEY` is set.
 - **Docker Ready**: Single container, no external dependencies.
 
@@ -16,7 +16,7 @@ IMAP rule-based email sorter with SpamAssassin integration. Runs as a daemon: Fa
 
 ```bash
 mkdir mailmanager && cd mailmanager
-mkdir data logs
+mkdir data
 ```
 
 Copy `.env.example` to `.env` and fill in values:
@@ -41,7 +41,6 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       - ./data:/app/data
-      - ./logs:/app/logs
 ```
 
 ### 2. Set the login password

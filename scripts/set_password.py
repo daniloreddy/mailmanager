@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """CLI to set the MailManager login password."""
+
 import subprocess
 import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
 _VENV_DIR = _ROOT / ("venv" if sys.platform == "win32" else ".venv")
-_VENV_PYTHON = _VENV_DIR / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+_VENV_PYTHON = _VENV_DIR / (
+    "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
+)
 
 
 def _bootstrap() -> None:
@@ -14,7 +17,14 @@ def _bootstrap() -> None:
         print("Creating venv...")
         subprocess.run([sys.executable, "-m", "venv", str(_VENV_DIR)], check=True)
         subprocess.run(
-            [str(_VENV_PYTHON), "-m", "pip", "install", "-r", str(_ROOT / "requirements.txt")],
+            [
+                str(_VENV_PYTHON),
+                "-m",
+                "pip",
+                "install",
+                "-r",
+                str(_ROOT / "requirements.txt"),
+            ],
             check=True,
         )
     if Path(sys.executable).resolve() != _VENV_PYTHON.resolve():

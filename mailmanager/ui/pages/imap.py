@@ -188,7 +188,9 @@ async def imap_page() -> None:
                     ui.notify(f"Error: {exc}", type="negative")
 
             with ui.row().classes("justify-end q-mt-md q-gutter-xs"):
-                ui.button("Cancel", on_click=dialog.close).props("flat")
+                ui.button("Cancel", on_click=dialog.close).props("flat").classes(
+                    "text-grey-6"
+                )
                 ui.button("Save", on_click=save).props("color=primary")
 
         dialog.open()
@@ -197,7 +199,9 @@ async def imap_page() -> None:
         with ui.dialog() as dlg, ui.card():
             ui.label(f'Delete "{name}"?').classes("text-h6 q-mb-md")
             with ui.row().classes("justify-end q-gutter-xs"):
-                ui.button("Cancel", on_click=dlg.close).props("flat")
+                ui.button("Cancel", on_click=dlg.close).props("flat").classes(
+                    "text-grey-6"
+                )
 
                 async def do_delete() -> None:
                     db.delete_imap(name)

@@ -101,6 +101,11 @@ class SchedulerConfig(BaseModel):
     intervalSeconds: int = 300
 
 
+class UiConfig(BaseModel):
+    autoRefreshEnabled: bool = True
+    autoRefreshSeconds: int = 30
+
+
 class State(BaseModel):
     imapConfigName: str
     folder: str

@@ -10,6 +10,7 @@ from .models import (
     State,
     SchedulerConfig,
     LoggingConfig,
+    UiConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,10 @@ class Db:
                 data TEXT
             )""")
             c.execute("""CREATE TABLE IF NOT EXISTS logging_config (
+                id INTEGER PRIMARY KEY,
+                data TEXT
+            )""")
+            c.execute("""CREATE TABLE IF NOT EXISTS ui_config (
                 id INTEGER PRIMARY KEY,
                 data TEXT
             )""")
@@ -198,5 +203,22 @@ class Db:
             c = conn.cursor()
             c.execute(
                 "INSERT OR REPLACE INTO logging_config (id, data) VALUES (1, ?)",
+                (json.dumps(config.model_dump()),),
+            )
+
+    def load_ui_config(self) -> UiConfig:
+        with sqlite3.connect(self.db_path) as conn:
+            c = conn.cursor()
+            c.execute("SELECT data FROM ui_config WHERE id=1")
+            row = c.fetchone()
+        if row:
+            return UiConfig(**json.loads(row[0]))
+        return UiConfig()
+
+    def save_ui_config(self, config: UiConfig):
+        with sqlite3.connect(self.db_path) as conn:
+            c = conn.cursor()
+            c.execute(
+                "INSERT OR REPLACE INTO ui_config (id, data) VALUES (1, ?)",
                 (json.dumps(config.model_dump()),),
             )

@@ -36,7 +36,7 @@ app/
   auth.py                AuthManager: cookie-based session auth (scrypt + JWT), brute-force protection
 mailmanager/
   models.py              Pydantic v2: Rule, ImapConfig, SpamAssassinConfig, SchedulerConfig,
-                         LoggingConfig, State + Enums
+                         LoggingConfig, UiConfig (autoRefreshEnabled, autoRefreshSeconds), State + Enums
   db.py                  Db: SQLite CRUD, WAL mode, auto-migrates legacy JSON on first run
   processing.py          ProcessingService: IMAP fetch → spam check → rule eval → action (sync)
   spamassassin.py        SpamAssassinClient: raw SPAMC/1.5 socket protocol
@@ -55,7 +55,7 @@ mailmanager/
                          icon-nav header (bg-primary), dark/light toggle, no sidebar
     components.py        metric_card(), status_badge() reusable NiceGUI components
     pages/
-      status.py          @ui.page("/")  — scheduler status + Run Now button, auto-refresh 5s
+      status.py          @ui.page("/")  — scheduler status + Run Now button, auto-refresh (SchedulerConfig.dashboardRefreshSeconds)
       imap.py            @ui.page("/imap") — IMAP config CRUD
       rules.py           @ui.page("/rules") — rule CRUD
       settings.py        @ui.page("/settings") — spam + scheduler + logging config
@@ -93,7 +93,7 @@ data/
 
 ### Persistence (db.py)
 
-- Tables: `imap_configs` (name PK), `rules` (id AUTOINCREMENT PK), `spam_config` (id=1), `scheduler_config` (id=1), `logging_config` (id=1), `states` (key PK)
+- Tables: `imap_configs` (name PK), `rules` (id AUTOINCREMENT PK), `spam_config` (id=1), `scheduler_config` (id=1), `logging_config` (id=1), `ui_config` (id=1), `states` (key PK)
 - WAL mode + busy_timeout=5000ms to handle concurrent API writes during scheduler runs
 - State key format: `{account_name}:{folder}` → JSON `{uidValidity, lastProcessedUid}`
 - Auto-migration: if legacy JSON files exist in `data/`, they are imported and deleted atomically
@@ -116,3 +116,18 @@ data/
 - camelCase JSON keys in SQLite JSON columns (Pydantic field aliases)
 - Auth: if `MAILMANAGER_API_KEY` unset → 127.0.0.1 only, no auth; if set → 0.0.0.0, cookie session (AuthManager) on UI + Bearer token on `/api/*`; `_BYPASS_PREFIXES` excludes `/_nicegui/` and `/api/` from the cookie middleware
 - Logging: stdout only (captured by `docker compose logs`); level change via API takes effect immediately
+
+## UI Guidelines
+
+- Pages showing aggregated data or summaries (dashboards, status views) **must** support auto-refresh via `ui.timer`.
+- Auto-refresh is controlled by a **single global** `UiConfig` stored in `ui_config` (id=1):
+  - `autoRefreshEnabled: bool` — whether auto-refresh is active
+  - `autoRefreshSeconds: int` — interval in seconds (min 1)
+- Both fields are exposed in Settings → UI card. Changing them takes effect on the next page load.
+- Pattern for every dashboard page:
+  ```python
+  ui_cfg = nicegui_app.state.db.load_ui_config()
+  if ui_cfg.autoRefreshEnabled and ui_cfg.autoRefreshSeconds > 0:
+      ui.timer(float(ui_cfg.autoRefreshSeconds), content.refresh)
+  ```
+- `UiConfig` is app-wide: one setting governs all dashboard pages simultaneously.

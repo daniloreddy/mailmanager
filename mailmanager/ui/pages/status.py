@@ -49,7 +49,10 @@ async def status_page() -> None:
             "color=primary" + (" disabled" if s.is_running else "")
         )
 
+    ui_cfg = nicegui_app.state.db.load_ui_config()
+
     with base_layout("Status"):
         with ui.column().classes("full-width").style("padding:1.25rem;"):
             content()
-            ui.timer(5.0, content.refresh)
+            if ui_cfg.autoRefreshEnabled and ui_cfg.autoRefreshSeconds > 0:
+                ui.timer(float(ui_cfg.autoRefreshSeconds), content.refresh)

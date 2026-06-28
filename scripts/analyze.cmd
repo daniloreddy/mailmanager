@@ -21,3 +21,7 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 echo Running Mypy...
 mypy .
 if %errorlevel% neq 0 exit /b %errorlevel%
+
+echo Running Pytest...
+pytest tests/
+if %errorlevel% neq 0 exit /b %errorlevel%

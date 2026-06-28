@@ -16,3 +16,5 @@ echo "Running Ruff format..."
 ruff format .
 echo "Running Mypy..."
 mypy .
+echo "Running Pytest..."
+pytest tests/

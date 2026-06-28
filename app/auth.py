@@ -151,7 +151,5 @@ class AuthManager:
             now = time.time()
             self._blocked = {k: v for k, v in self._blocked.items() if v > now}
             self._failed = {
-                k: [t for t in v if now - t < 300]
-                for k, v in self._failed.items()
-                if v
+                k: [t for t in v if now - t < 300] for k, v in self._failed.items() if v
             }
