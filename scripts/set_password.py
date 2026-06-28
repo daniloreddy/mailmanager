@@ -13,6 +13,15 @@ _VENV_PYTHON = _VENV_DIR / (
 
 
 def _bootstrap() -> None:
+    # If deps are already importable (e.g. inside Docker), skip venv entirely.
+    sys.path.insert(0, str(_ROOT))
+    try:
+        import app.auth  # noqa: F401
+
+        return
+    except ImportError:
+        sys.path.pop(0)
+
     if not _VENV_PYTHON.exists():
         print("Creating venv...")
         subprocess.run([sys.executable, "-m", "venv", str(_VENV_DIR)], check=True)
