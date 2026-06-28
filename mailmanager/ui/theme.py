@@ -60,7 +60,7 @@ def _footer(right_content: str = "") -> None:
     with ui.footer().classes("bg-primary text-white q-px-md q-py-xs row items-center"):
         ui.label(_APP_NAME).classes("col text-caption").style("opacity:0.6")
         if right_content:
-            ui.label(right_content).classes("text-caption").style("opacity:0.6")
+            ui.label(right_content).classes("text-body2 text-weight-bold")
 
 
 @contextmanager

@@ -2,7 +2,7 @@ from nicegui import ui
 
 
 def metric_card(label: str, value: str, color: str = "primary") -> None:
-    with ui.card().classes("q-pa-md"):
+    with ui.card().classes("q-pa-md col"):
         ui.label(label).classes("text-caption text-grey-6 text-uppercase")
         ui.label(value).classes(f"text-h5 text-weight-bold text-{color}")
 

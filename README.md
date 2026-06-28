@@ -100,8 +100,8 @@ Remove `MAILMANAGER_API_KEY` from the compose file. The server binds `127.0.0.1`
 
 ```bash
 python -m venv venv
-./venv/Scripts/pip install -r requirements.txt   # Windows
-# ./venv/bin/pip install -r requirements.txt     # Linux/Mac
+./venv/Scripts/pip install -r requirements.txt -r requirements-dev.txt   # Windows
+# ./venv/bin/pip install -r requirements.txt -r requirements-dev.txt     # Linux/Mac
 ./venv/Scripts/python main.py
 ```
 

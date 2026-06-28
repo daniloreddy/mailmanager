@@ -55,7 +55,7 @@ mailmanager/
                          icon-nav header (bg-primary), dark/light toggle, no sidebar
     components.py        metric_card(), status_badge() reusable NiceGUI components
     pages/
-      status.py          @ui.page("/")  — scheduler status + Run Now button, auto-refresh (SchedulerConfig.dashboardRefreshSeconds)
+      status.py          @ui.page("/")  — scheduler status + Run Now button, auto-refresh (UiConfig.autoRefreshEnabled / autoRefreshSeconds)
       imap.py            @ui.page("/imap") — IMAP config CRUD
       rules.py           @ui.page("/rules") — rule CRUD
       settings.py        @ui.page("/settings") — spam + scheduler + logging config
