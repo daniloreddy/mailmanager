@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from contextlib import contextmanager
 from typing import Any, Generator
@@ -63,9 +64,23 @@ def _footer(right_content: str = "") -> None:
             ui.label(right_content).classes("text-body2 text-weight-bold")
 
 
+def _logout_action() -> None:
+    if os.environ.get("MAILMANAGER_API_KEY"):
+        ui.button(
+            icon="logout",
+            on_click=lambda: ui.run_javascript("window.location.href='/auth/logout'"),
+        ).props("flat color=white round").tooltip("Logout")
+
+
 @contextmanager
 def base_layout(page_title: str) -> Generator[None, None, None]:
     dark = _page_setup(page_title)
-    _header(page_title, _NAV_ITEMS, current=page_title, dark=dark)
+    _header(
+        page_title,
+        _NAV_ITEMS,
+        current=page_title,
+        dark=dark,
+        extra_actions=_logout_action,
+    )
     yield
     _footer(f"v{_VERSION}")
