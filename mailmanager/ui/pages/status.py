@@ -54,5 +54,26 @@ async def status_page() -> None:
     with base_layout("Status"):
         with ui.column().classes("full-width").style("padding:1.25rem;"):
             content()
+            refresh_lbl = (
+                ui.label("")
+                .classes("text-caption text-grey-6")
+                .style("text-align:right; width:100%")
+            )
+
             if ui_cfg.autoRefreshEnabled and ui_cfg.autoRefreshSeconds > 0:
-                ui.timer(float(ui_cfg.autoRefreshSeconds), content.refresh)
+                interval = ui_cfg.autoRefreshSeconds
+
+                def _update_lbl() -> None:
+                    now = datetime.now().strftime("%H:%M:%S")
+                    refresh_lbl.set_text(
+                        f"Aggiornato: {now} · auto-refresh {interval}s"
+                    )
+
+                def _refresh() -> None:
+                    content.refresh()
+                    _update_lbl()
+
+                _update_lbl()
+                ui.timer(float(interval), _refresh)
+            else:
+                refresh_lbl.set_text("auto-refresh disabilitato")

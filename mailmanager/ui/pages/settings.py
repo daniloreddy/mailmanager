@@ -108,9 +108,11 @@ async def settings_page() -> None:
                     "color=primary size=sm"
                 ).classes("q-mt-sm")
 
-            # ── UI ─────────────────────────────────────────────────────
+            # ── Interfaccia ────────────────────────────────────────────
             with ui.card().classes("full-width q-pa-md"):
-                ui.label("UI").classes("text-h6 q-mb-md")
+                with ui.row().classes("items-center q-mb-md q-gutter-sm"):
+                    ui.label("Interfaccia").classes("text-h6")
+                    ui.badge("hot-reload").props("color=positive")
 
                 ui_refresh_enabled = ui.checkbox(
                     "Auto-refresh dashboards", value=ui_cfg.autoRefreshEnabled

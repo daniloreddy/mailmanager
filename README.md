@@ -19,10 +19,13 @@ mkdir mailmanager && cd mailmanager
 mkdir data
 ```
 
-Copy `.env.example` to `.env` and fill in values:
+Create `.env` (template: [`.env.example`](.env.example) in the repo):
 
 ```bash
-cp .env.example .env   # then edit .env
+MAILMANAGER_API_KEY=changeme        # required for network access: enables auth, binds 0.0.0.0
+# MAILMANAGER_PORT=8080             # HTTP port (default 8080)
+# AUTH_SECURE_COOKIE=1              # force Secure flag on session cookie
+# TRUSTED_PROXIES=127.0.0.1         # IPs trusted for X-Forwarded-For
 ```
 
 Create `docker-compose.yml`:
@@ -72,7 +75,7 @@ Open `http://localhost:8080` — log in with the password you set.
 
 ## Without auth (local use only)
 
-Remove `MAILMANAGER_API_KEY` from the compose file. The server binds `127.0.0.1` only and requires no login.
+If `MAILMANAGER_API_KEY` is unset the server binds `127.0.0.1` only and requires no login. This works for manual (non-Docker) runs on your machine. **Not usable with Docker**: inside a container `127.0.0.1` is unreachable from the host, so the Docker deployment always requires `MAILMANAGER_API_KEY`.
 
 ---
 
@@ -99,18 +102,24 @@ Remove `MAILMANAGER_API_KEY` from the compose file. The server binds `127.0.0.1`
 ## Manual Installation (dev)
 
 ```bash
+# Windows
 python -m venv venv
-./venv/Scripts/pip install -r requirements.txt -r requirements-dev.txt   # Windows
-# ./venv/bin/pip install -r requirements.txt -r requirements-dev.txt     # Linux/Mac
+./venv/Scripts/pip install -r requirements.txt -r requirements.dev.txt
 ./venv/Scripts/python main.py
+
+# Linux/Mac
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt -r requirements.dev.txt
+./.venv/bin/python main.py
 ```
 
 ---
 
 ## Development
 
-- **Lint/Type Check**: `scripts/analyze.cmd` (Windows) / `scripts/analyze.sh` (Unix)
-- **Tests**: `./venv/Scripts/pytest tests/`
+- **Lint/Type Check + Tests**: `scripts/check.bat` (Windows) / `scripts/check.sh` (Unix) — ruff, mypy, pytest
+- **Tests only**: `./venv/Scripts/pytest tests/`
+- **Run local**: `scripts/start.bat` (Windows) / `scripts/start.sh` (Unix) — auto-create venv, start server
 - **Dev Docker**: `docker compose -f docker-compose-dev.yml up --build` (builds locally)
 
 ---

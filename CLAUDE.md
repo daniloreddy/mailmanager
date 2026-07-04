@@ -9,18 +9,18 @@ IMAP rule-based email sorter with SpamAssassin integration. Runs as a long-lived
 ## Commands
 
 ```bash
-# Setup
+# Setup (Windows: venv | Linux/Mac: .venv)
 python -m venv venv
-./venv/Scripts/pip install -r requirements.txt -r requirements-dev.txt
+./venv/Scripts/pip install -r requirements.txt -r requirements.dev.txt
 
 # Run
 ./venv/Scripts/python main.py          # binds 127.0.0.1:8080 (no auth)
 MAILMANAGER_API_KEY=secret ./venv/Scripts/python main.py   # binds 0.0.0.0:8080 (auth required)
 MAILMANAGER_PORT=9000 ./venv/Scripts/python main.py        # custom port
 
-# Lint + type check
-scripts/analyze.cmd                    # Windows (ruff check/format + mypy)
-scripts/analyze.sh                     # Unix
+# Lint + type check + tests
+scripts/check.bat                      # Windows (ruff check/format + mypy + pytest)
+scripts/check.sh                       # Unix
 
 # Tests
 ./venv/Scripts/pytest tests/                    # all tests
@@ -58,7 +58,11 @@ mailmanager/
       status.py          @ui.page("/")  — scheduler status + Run Now button, auto-refresh (UiConfig.autoRefreshEnabled / autoRefreshSeconds)
       imap.py            @ui.page("/imap") — IMAP config CRUD
       rules.py           @ui.page("/rules") — rule CRUD
-      settings.py        @ui.page("/settings") — spam + scheduler + logging config
+      settings.py        @ui.page("/settings") — spam + scheduler + logging + Interfaccia (auto-refresh) config
+scripts/
+  check.bat / check.sh   Lint + type check + tests (ruff, mypy, pytest); auto-creates venv
+  start.bat / start.sh   Run server locally; auto-creates venv
+  set_password.py        CLI to set login password (venv auto-bootstrap; also runnable in Docker)
 static/
   login.html             Self-contained login page (used when MAILMANAGER_API_KEY is set)
 data/
@@ -123,11 +127,9 @@ data/
 - Auto-refresh is controlled by a **single global** `UiConfig` stored in `ui_config` (id=1):
   - `autoRefreshEnabled: bool` — whether auto-refresh is active
   - `autoRefreshSeconds: int` — interval in seconds (min 1)
-- Both fields are exposed in Settings → UI card. Changing them takes effect on the next page load.
-- Pattern for every dashboard page:
-  ```python
-  ui_cfg = nicegui_app.state.db.load_ui_config()
-  if ui_cfg.autoRefreshEnabled and ui_cfg.autoRefreshSeconds > 0:
-      ui.timer(float(ui_cfg.autoRefreshSeconds), content.refresh)
-  ```
+- Both fields are exposed in Settings → "Interfaccia" card (badge `hot-reload`). Changing them takes effect on the next page load.
+- Every dashboard page must show a refresh label (always visible, right-aligned, `text-caption text-grey-6`), updated inside the refresh callback:
+  - enabled → `Aggiornato: HH:MM:SS · auto-refresh Xs`
+  - disabled → `auto-refresh disabilitato` (and no `ui.timer` is created)
+- Pattern for every dashboard page: see `pages/status.py` (refreshable content + refresh label + conditional `ui.timer`).
 - `UiConfig` is app-wide: one setting governs all dashboard pages simultaneously.

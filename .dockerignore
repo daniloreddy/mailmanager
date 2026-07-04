@@ -3,6 +3,8 @@
 .gitignore
 data/
 debug/
+logs/
+node_modules/
 venv/
 .venv/
 __pycache__/

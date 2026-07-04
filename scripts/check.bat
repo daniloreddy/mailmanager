@@ -4,7 +4,7 @@ cd /d "%~dp0.."
 if not exist venv\Scripts\activate.bat (
     echo Creating venv...
     python -m venv venv
-    venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt
+    venv\Scripts\pip install -r requirements.txt -r requirements.dev.txt
     if %errorlevel% neq 0 exit /b %errorlevel%
 )
 
