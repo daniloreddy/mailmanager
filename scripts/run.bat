@@ -12,6 +12,5 @@ call venv\Scripts\activate.bat
 
 :: Optional: set MAILMANAGER_API_KEY=your_token_here
 :: Optional: set MAILMANAGER_PORT=8080
-set MAILMANAGER_PORT=8090
 
 python main.py

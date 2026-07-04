@@ -1,6 +1,8 @@
 .env
 .git
 .gitignore
+.github/
+.claude/
 data/
 debug/
 logs/

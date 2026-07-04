@@ -19,8 +19,8 @@ MAILMANAGER_API_KEY=secret ./venv/Scripts/python main.py   # binds 0.0.0.0:8080 
 MAILMANAGER_PORT=9000 ./venv/Scripts/python main.py        # custom port
 
 # Lint + type check + tests
-scripts/check.bat                      # Windows (ruff check/format + mypy + pytest)
-scripts/check.sh                       # Unix
+scripts/checks.bat                     # Windows (ruff check/format + mypy + pytest)
+scripts/checks.sh                      # Unix
 
 # Tests
 ./venv/Scripts/pytest tests/                    # all tests
@@ -60,14 +60,15 @@ mailmanager/
       rules.py           @ui.page("/rules") — rule CRUD
       settings.py        @ui.page("/settings") — spam + scheduler + logging + Interfaccia (auto-refresh) config
 scripts/
-  check.bat / check.sh   Lint + type check + tests (ruff, mypy, pytest); auto-creates venv
-  start.bat / start.sh   Run server locally; auto-creates venv
-  set_password.py        CLI to set login password (venv auto-bootstrap; also runnable in Docker)
+  checks.bat / checks.sh Lint + type check + tests (ruff, mypy, pytest); auto-creates venv
+  run.bat / run.sh       Run server locally; auto-creates venv
+  set_password.py        CLI to set login password (re-execs into existing venv, no auto-init; also runnable in Docker)
 static/
   login.html             Self-contained login page (used when MAILMANAGER_API_KEY is set)
 data/
-  mailmanager.db         SQLite (imap_configs, rules, spam_config, scheduler_config, logging_config, states)
+  mailmanager.db         SQLite (imap_configs, rules, spam_config, scheduler_config, logging_config, ui_config, states)
   auth.json              Password hash + JWT secret (auto-created; gitignored)
+  storage_secret         NiceGUI storage_secret, stable across restarts (auto-created; gitignored)
   mailmanager.lock       portalocker single-instance guard
 ```
 

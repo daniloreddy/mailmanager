@@ -39,6 +39,19 @@ def _is_secure(headers: dict) -> bool:
     return headers.get("x-forwarded-proto") == "https"
 
 
+def _load_storage_secret(data_dir: Path) -> str:
+    # Stable across restarts so app.storage.user (e.g. dark mode) persists.
+    secret_file = data_dir / "storage_secret"
+    if secret_file.exists():
+        secret = secret_file.read_text(encoding="utf-8").strip()
+        if secret:
+            return secret
+    secret = secrets.token_hex(32)
+    data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    secret_file.write_text(secret, encoding="utf-8")
+    return secret
+
+
 def create_app(db: Db, scheduler: SchedulerService) -> FastAPI:
     auth = None
 
@@ -123,6 +136,6 @@ def create_app(db: Db, scheduler: SchedulerService) -> FastAPI:
     from nicegui import ui
     from .ui import pages  # noqa: F401 — triggers @ui.page registrations
 
-    ui.run_with(app, storage_secret=secrets.token_hex(32))
+    ui.run_with(app, storage_secret=_load_storage_secret(Path("data")))
 
     return app

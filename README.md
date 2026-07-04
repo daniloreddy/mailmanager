@@ -117,9 +117,9 @@ python3 -m venv .venv
 
 ## Development
 
-- **Lint/Type Check + Tests**: `scripts/check.bat` (Windows) / `scripts/check.sh` (Unix) — ruff, mypy, pytest
+- **Lint/Type Check + Tests**: `scripts/checks.bat` (Windows) / `scripts/checks.sh` (Unix) — ruff, mypy, pytest
 - **Tests only**: `./venv/Scripts/pytest tests/`
-- **Run local**: `scripts/start.bat` (Windows) / `scripts/start.sh` (Unix) — auto-create venv, start server
+- **Run local**: `scripts/run.bat` (Windows) / `scripts/run.sh` (Unix) — auto-create venv, start server
 - **Dev Docker**: `docker compose -f docker-compose-dev.yml up --build` (builds locally)
 
 ---
