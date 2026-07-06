@@ -13,7 +13,7 @@ class CheckResult(BaseModel):
 
 
 class SpamAssassinClient:
-    def __init__(self, config: SpamAssassinConfig):
+    def __init__(self, config: SpamAssassinConfig) -> None:
         self.config = config
 
     def check(self, message_bytes: bytes) -> CheckResult:

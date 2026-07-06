@@ -6,31 +6,23 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator, Callable, Optional
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
+from fastapi import FastAPI, Form, Request, Response
 from fastapi.responses import FileResponse, RedirectResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .db import Db
 from .scheduler import SchedulerService
-from .api import configs, logging_config, rules, scheduler as scheduler_routes, spam
 
 logger = logging.getLogger(__name__)
 
-_api_key: Optional[str] = os.environ.get("MAILMANAGER_API_KEY")
-_bearer = HTTPBearer(auto_error=False)
+_require_auth: bool = os.environ.get("REQUIRE_AUTH", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 _STATIC_ROOT = Path(__file__).parent.parent / "static"
 _PUBLIC_PATHS = {"/login", "/auth/login", "/auth/logout"}
-_BYPASS_PREFIXES = ("/_nicegui/", "/api/")
-
-
-def verify_token(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
-) -> None:
-    if _api_key is None:
-        return
-    if credentials is None or credentials.credentials != _api_key:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+_BYPASS_PREFIXES = ("/_nicegui/",)
 
 
 def _is_secure(headers: dict) -> bool:
@@ -55,7 +47,7 @@ def _load_storage_secret(data_dir: Path) -> str:
 def create_app(db: Db, scheduler: SchedulerService) -> FastAPI:
     auth = None
 
-    if _api_key:
+    if _require_auth:
         from app.auth import AuthManager
 
         auth = AuthManager(
@@ -77,8 +69,6 @@ def create_app(db: Db, scheduler: SchedulerService) -> FastAPI:
             purge_task.cancel()
 
     app = FastAPI(title="MailManager", lifespan=lifespan)
-    app.state.db = db
-    app.state.scheduler = scheduler
 
     # NiceGUI page handlers receive request.app = nicegui's core.app (not this app),
     # so we attach db/scheduler to nicegui's app.state for page handler access.
@@ -86,13 +76,6 @@ def create_app(db: Db, scheduler: SchedulerService) -> FastAPI:
 
     nicegui_app.state.db = db
     nicegui_app.state.scheduler = scheduler
-
-    auth_deps = [Depends(verify_token)]
-    app.include_router(configs.router, prefix="/api", dependencies=auth_deps)
-    app.include_router(rules.router, prefix="/api", dependencies=auth_deps)
-    app.include_router(spam.router, prefix="/api", dependencies=auth_deps)
-    app.include_router(scheduler_routes.router, prefix="/api", dependencies=auth_deps)
-    app.include_router(logging_config.router, prefix="/api", dependencies=auth_deps)
 
     if auth is not None:
 

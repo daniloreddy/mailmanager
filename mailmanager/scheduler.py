@@ -20,7 +20,7 @@ class SchedulerStatus:
 
 
 class SchedulerService:
-    def __init__(self, db: Db):
+    def __init__(self, db: Db) -> None:
         self._db = db
         self._stop_event = asyncio.Event()
         self._run_now_event = asyncio.Event()

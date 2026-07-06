@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from mailmanager.db import Db
 from mailmanager.models import (
@@ -10,16 +12,16 @@ from mailmanager.models import (
 
 
 @pytest.fixture
-def db(tmp_path):
+def db(tmp_path: Path) -> Db:
     data_dir = tmp_path / "data"
     return Db(str(data_dir))
 
 
-def test_db_init(db):
+def test_db_init(db: Db) -> None:
     assert db.db_path.exists()
 
 
-def test_imap_config_crud(db):
+def test_imap_config_crud(db: Db) -> None:
     cfg = ImapConfig(
         name="test_account", host="imap.test.com", username="user", password="pass"
     )
@@ -31,7 +33,7 @@ def test_imap_config_crud(db):
     assert loaded[0].host == "imap.test.com"
 
 
-def test_rule_crud(db):
+def test_rule_crud(db: Db) -> None:
     rule = Rule(
         imapConfigName="test_account",
         actionType=ActionType.MOVE,
@@ -56,7 +58,7 @@ def test_rule_crud(db):
     assert updated_rules[0].id == rule_id
 
 
-def test_delete_rule(db):
+def test_delete_rule(db: Db) -> None:
     rule = Rule(
         imapConfigName="test",
         actionType=ActionType.DELETE,
@@ -67,6 +69,7 @@ def test_delete_rule(db):
     db.save_rule(rule)
     rules = db.load_rules()
     rule_id = rules[0].id
+    assert rule_id is not None
 
     db.delete_rule(rule_id)
     assert len(db.load_rules()) == 0

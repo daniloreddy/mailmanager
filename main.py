@@ -30,9 +30,13 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
-    api_key = os.environ.get("MAILMANAGER_API_KEY")
-    host = "0.0.0.0" if api_key else "127.0.0.1"
-    port = int(os.environ.get("MAILMANAGER_PORT", "8080"))
+    require_auth = os.environ.get("REQUIRE_AUTH", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    host = "0.0.0.0" if require_auth else "127.0.0.1"
+    port = int(os.environ.get("PORT", "8080"))
 
     lock_file = Path("data/mailmanager.lock")
     lock_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)

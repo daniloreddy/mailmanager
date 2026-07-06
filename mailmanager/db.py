@@ -17,14 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 class Db:
-    def __init__(self, data_dir: str = "data"):
+    def __init__(self, data_dir: str = "data") -> None:
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.db_path = self.data_dir / "mailmanager.db"
         self._init_db()
         self._migrate_from_json()
 
-    def _init_db(self):
+    def _init_db(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             c.execute("PRAGMA journal_mode=WAL")
@@ -58,9 +58,11 @@ class Db:
                 data TEXT
             )""")
 
-    def _migrate_from_json(self):
+    def _migrate_from_json(self) -> None:
         old_files = {
-            "imap-servers.json": self.save_imaps,
+            "imap-servers.json": lambda items: self.save_imaps(
+                [ImapConfig(**i) for i in items]
+            ),
             "rules.json": lambda items: [self.save_rule(Rule(**i)) for i in items],
             "spam-assassin.json": lambda data: self.save_spam_config(
                 SpamAssassinConfig(**data)
@@ -90,7 +92,7 @@ class Db:
             return SpamAssassinConfig(**json.loads(row[0]))
         return SpamAssassinConfig()
 
-    def save_spam_config(self, config: SpamAssassinConfig):
+    def save_spam_config(self, config: SpamAssassinConfig) -> None:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             c.execute(
@@ -105,7 +107,7 @@ class Db:
             rows = c.fetchall()
         return [ImapConfig(**json.loads(r[0])) for r in rows]
 
-    def save_imaps(self, imaps: List[ImapConfig]):
+    def save_imaps(self, imaps: List[ImapConfig]) -> None:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             for imap in imaps:
@@ -137,12 +139,12 @@ class Db:
                 rule.id = c.lastrowid
         return rule
 
-    def delete_rule(self, rule_id: int):
+    def delete_rule(self, rule_id: int) -> None:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             c.execute("DELETE FROM rules WHERE id = ?", (rule_id,))
 
-    def delete_imap(self, name: str):
+    def delete_imap(self, name: str) -> None:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             c.execute("DELETE FROM imap_configs WHERE name = ?", (name,))
@@ -154,7 +156,7 @@ class Db:
             rows = c.fetchall()
         return {k: State(**json.loads(d)) for k, d in rows}
 
-    def save_states(self, states: Dict[str, State]):
+    def save_states(self, states: Dict[str, State]) -> None:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             for k, v in states.items():
@@ -167,7 +169,7 @@ class Db:
         states = self.load_states()
         return states.get(key, default)
 
-    def put_state(self, state: State):
+    def put_state(self, state: State) -> None:
         states = self.load_states()
         states[state.key()] = state
         self.save_states(states)
@@ -181,7 +183,7 @@ class Db:
             return SchedulerConfig(**json.loads(row[0]))
         return SchedulerConfig()
 
-    def save_scheduler_config(self, config: SchedulerConfig):
+    def save_scheduler_config(self, config: SchedulerConfig) -> None:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             c.execute(
@@ -198,7 +200,7 @@ class Db:
             return LoggingConfig(**json.loads(row[0]))
         return LoggingConfig()
 
-    def save_logging_config(self, config: LoggingConfig):
+    def save_logging_config(self, config: LoggingConfig) -> None:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             c.execute(
@@ -215,7 +217,7 @@ class Db:
             return UiConfig(**json.loads(row[0]))
         return UiConfig()
 
-    def save_ui_config(self, config: UiConfig):
+    def save_ui_config(self, config: UiConfig) -> None:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             c.execute(

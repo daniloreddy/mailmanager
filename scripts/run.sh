@@ -9,7 +9,7 @@ fi
 
 source .venv/bin/activate
 
-# Optional: export MAILMANAGER_API_KEY=your_token_here
-# Optional: export MAILMANAGER_PORT=8080
+# Optional: export REQUIRE_AUTH=true
+# Optional: export PORT=8080
 
 exec python main.py

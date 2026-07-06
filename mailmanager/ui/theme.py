@@ -65,7 +65,11 @@ def _footer(right_content: str = "") -> None:
 
 
 def _logout_action() -> None:
-    if os.environ.get("MAILMANAGER_API_KEY"):
+    if os.environ.get("REQUIRE_AUTH", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    ):
         ui.button(
             icon="logout",
             on_click=lambda: ui.run_javascript("window.location.href='/auth/logout'"),

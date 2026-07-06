@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from unittest.mock import patch
 from mailmanager.processing import ProcessingService
@@ -6,6 +8,7 @@ from mailmanager.models import (
     ImapConfig,
     Rule,
     SpamAssassinConfig,
+    State,
     ActionType,
     ConditionOperator,
     ConditionSubject,
@@ -13,11 +16,11 @@ from mailmanager.models import (
 
 
 @pytest.fixture
-def mock_db(tmp_path):
+def mock_db(tmp_path: Path) -> Db:
     return Db(str(tmp_path / "data"))
 
 
-def test_process_account_integration(mock_db):
+def test_process_account_integration(mock_db: Db) -> None:
     # Setup
     imap_cfg = ImapConfig(name="test", host="localhost", username="u", password="p")
     rule = Rule(
@@ -51,6 +54,8 @@ def test_process_account_integration(mock_db):
         client.expunge.assert_called_once()
 
         # Check state update
-        state = mock_db.get_state("test:INBOX", None)
-        assert state is not None
+        default_state = State(
+            imapConfigName="test", folder="INBOX", uidValidity=0, lastProcessedUid=0
+        )
+        state = mock_db.get_state("test:INBOX", default_state)
         assert state.lastProcessedUid == 1

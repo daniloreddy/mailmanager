@@ -7,7 +7,7 @@ IMAP rule-based email sorter with SpamAssassin integration. Runs as a daemon: Fa
 - **Spam Detection**: Integrated SpamAssassin support via SPAMC protocol.
 - **State Tracking**: IMAP UID tracking to avoid redundant processing.
 - **Web UI**: NiceGUI interface with Status, IMAP, Rules, and Settings tabs (auto-refresh interval configurable).
-- **Auth**: Cookie-based session auth when `MAILMANAGER_API_KEY` is set.
+- **Auth**: Cookie-based session auth when `REQUIRE_AUTH` is set.
 - **Docker Ready**: Single container, no external dependencies.
 
 ## Quick Start (Docker)
@@ -22,8 +22,8 @@ mkdir data
 Create `.env` (template: [`.env.example`](.env.example) in the repo):
 
 ```bash
-MAILMANAGER_API_KEY=changeme        # required for network access: enables auth, binds 0.0.0.0
-# MAILMANAGER_PORT=8080             # HTTP port (default 8080)
+REQUIRE_AUTH=true        # required for network access: enables auth, binds 0.0.0.0
+# PORT=8080             # HTTP port (default 8080)
 # AUTH_SECURE_COOKIE=1              # force Secure flag on session cookie
 # TRUSTED_PROXIES=127.0.0.1         # IPs trusted for X-Forwarded-For
 ```
@@ -75,7 +75,7 @@ Open `http://localhost:8080` — log in with the password you set.
 
 ## Without auth (local use only)
 
-If `MAILMANAGER_API_KEY` is unset the server binds `127.0.0.1` only and requires no login. This works for manual (non-Docker) runs on your machine. **Not usable with Docker**: inside a container `127.0.0.1` is unreachable from the host, so the Docker deployment always requires `MAILMANAGER_API_KEY`.
+If `REQUIRE_AUTH` is unset the server binds `127.0.0.1` only and requires no login. This works for manual (non-Docker) runs on your machine. **Not usable with Docker**: inside a container `127.0.0.1` is unreachable from the host, so the Docker deployment always requires `REQUIRE_AUTH=true`.
 
 ---
 
@@ -83,8 +83,8 @@ If `MAILMANAGER_API_KEY` is unset the server binds `127.0.0.1` only and requires
 
 | Variable | Default | Description |
 |---|---|---|
-| `MAILMANAGER_API_KEY` | _(unset)_ | If set: binds `0.0.0.0`, enables login auth |
-| `MAILMANAGER_PORT` | `8080` | HTTP port |
+| `REQUIRE_AUTH` | _(unset)_ | If `true`: binds `0.0.0.0`, enables login auth |
+| `PORT` | `8080` | HTTP port |
 | `AUTH_SECURE_COOKIE` | _(unset)_ | Set to `1` to force `Secure` flag on the session cookie |
 | `TRUSTED_PROXIES` | `127.0.0.1` | Comma-separated IPs trusted to forward `X-Forwarded-For` |
 

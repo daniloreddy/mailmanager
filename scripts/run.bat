@@ -10,7 +10,7 @@ if not exist venv\Scripts\activate.bat (
 
 call venv\Scripts\activate.bat
 
-:: Optional: set MAILMANAGER_API_KEY=your_token_here
-:: Optional: set MAILMANAGER_PORT=8080
+:: Optional: set REQUIRE_AUTH=true
+:: Optional: set PORT=8080
 
 python main.py

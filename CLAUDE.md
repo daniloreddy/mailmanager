@@ -15,8 +15,8 @@ python -m venv venv
 
 # Run
 ./venv/Scripts/python main.py          # binds 127.0.0.1:8080 (no auth)
-MAILMANAGER_API_KEY=secret ./venv/Scripts/python main.py   # binds 0.0.0.0:8080 (auth required)
-MAILMANAGER_PORT=9000 ./venv/Scripts/python main.py        # custom port
+REQUIRE_AUTH=true ./venv/Scripts/python main.py   # binds 0.0.0.0:8080 (auth required)
+PORT=9000 ./venv/Scripts/python main.py        # custom port
 
 # Lint + type check + tests
 scripts/checks.bat                     # Windows (ruff check/format + mypy + pytest)
@@ -41,15 +41,9 @@ mailmanager/
   processing.py          ProcessingService: IMAP fetch → spam check → rule eval → action (sync)
   spamassassin.py        SpamAssassinClient: raw SPAMC/1.5 socket protocol
   scheduler.py           SchedulerService: asyncio loop, runs ProcessingService in thread executor
-  server.py              FastAPI app factory: lifespan (start/stop scheduler), auth middleware,
-                         NiceGUI mount via ui.run_with()
-  api/
-    deps.py              get_db / get_scheduler FastAPI dependencies
-    configs.py           GET/POST/PUT/DELETE /api/configs
-    rules.py             GET/POST/PUT/DELETE /api/rules
-    spam.py              GET/PUT /api/spam
-    scheduler.py         GET /api/scheduler/status, POST /api/scheduler/run, GET/PUT /api/scheduler/config
-    logging_config.py    GET/PUT /api/logging/config (applies level change immediately)
+  server.py              FastAPI app factory: lifespan (start/stop scheduler), cookie auth middleware,
+                         NiceGUI mount via ui.run_with(). No separate REST API — NiceGUI pages read/write
+                         Db and SchedulerService directly in-process via nicegui.app.state
   ui/
     theme.py             _page_setup() / _header() / _footer() / base_layout() context manager:
                          icon-nav header (bg-primary), dark/light toggle, no sidebar
@@ -64,7 +58,7 @@ scripts/
   run.bat / run.sh       Run server locally; auto-creates venv
   set_password.py        CLI to set login password (re-execs into existing venv, no auto-init; also runnable in Docker)
 static/
-  login.html             Self-contained login page (used when MAILMANAGER_API_KEY is set)
+  login.html             Self-contained login page (used when REQUIRE_AUTH is set)
 data/
   mailmanager.db         SQLite (imap_configs, rules, spam_config, scheduler_config, logging_config, ui_config, states)
   auth.json              Password hash + JWT secret (auto-created; gitignored)
@@ -87,7 +81,7 @@ data/
 
 - `SchedulerService._loop()` runs as an asyncio task (created inside FastAPI `lifespan`)
 - Sleep is interruptible: `asyncio.wait_for(_run_now_event.wait(), timeout=intervalSeconds)`
-- `POST /api/scheduler/run` sets `_run_now_event`; returns 409 if already running
+- `scheduler.trigger_run_now()` (called from the Status page's Run Now button) sets `_run_now_event`; returns `False` if already running
 - `ProcessingService` constructed fresh each run — picks up latest rules/config automatically
 - Interval changes take effect on the next cycle (no reload needed)
 
@@ -99,7 +93,7 @@ data/
 ### Persistence (db.py)
 
 - Tables: `imap_configs` (name PK), `rules` (id AUTOINCREMENT PK), `spam_config` (id=1), `scheduler_config` (id=1), `logging_config` (id=1), `ui_config` (id=1), `states` (key PK)
-- WAL mode + busy_timeout=5000ms to handle concurrent API writes during scheduler runs
+- WAL mode + busy_timeout=5000ms to handle concurrent UI writes during scheduler runs
 - State key format: `{account_name}:{folder}` → JSON `{uidValidity, lastProcessedUid}`
 - Auto-migration: if legacy JSON files exist in `data/`, they are imported and deleted atomically
 
@@ -108,7 +102,7 @@ data/
 - Registry: `ghcr.io/daniloreddy/mailmanager`
 - CI/CD: `.github/workflows/docker-publish.yml` (triggers on push to main and tags)
 - Volumes: `/app/data` (SQLite + lock)
-- Env vars: `MAILMANAGER_API_KEY`, `MAILMANAGER_PORT`, `AUTH_SECURE_COOKIE`, `TRUSTED_PROXIES` (see Key invariants)
+- Env vars: `REQUIRE_AUTH`, `PORT`, `AUTH_SECURE_COOKIE`, `TRUSTED_PROXIES` (see Key invariants)
 
 ## Key invariants
 
@@ -119,8 +113,9 @@ data/
 - `text/html` email bodies are NOT matched by MESSAGE rules (only `text/plain` decoded)
 - STOP action type halts the rule chain but takes no action on the message
 - camelCase JSON keys in SQLite JSON columns (Pydantic field aliases)
-- Auth: if `MAILMANAGER_API_KEY` unset → 127.0.0.1 only, no auth; if set → 0.0.0.0, cookie session (AuthManager) on UI + Bearer token on `/api/*`; `_BYPASS_PREFIXES` excludes `/_nicegui/` and `/api/` from the cookie middleware
-- Logging: stdout only (captured by `docker compose logs`); level change via API takes effect immediately
+- Auth: if `REQUIRE_AUTH` unset/false → 127.0.0.1 only, no auth; if true → 0.0.0.0, cookie session (AuthManager) gates the whole app; `_BYPASS_PREFIXES` excludes only `/_nicegui/` (websocket/assets) from the cookie middleware
+- No separate REST API: earlier versions exposed a Bearer-token `/api/*` surface for the pre-NiceGUI vanilla-JS frontend; removed after the NiceGUI migration left it with zero consumers (NiceGUI pages talk to `Db`/`SchedulerService` in-process)
+- Logging: stdout only (captured by `docker compose logs`); level change via Settings page takes effect immediately
 
 ## UI Guidelines
 

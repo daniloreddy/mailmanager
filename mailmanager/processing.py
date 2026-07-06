@@ -31,13 +31,15 @@ def _decode_header(value: str) -> str:
 
 
 class ProcessingService:
-    def __init__(self, db: Db, rules: List[Rule], spam_config: SpamAssassinConfig):
+    def __init__(
+        self, db: Db, rules: List[Rule], spam_config: SpamAssassinConfig
+    ) -> None:
         self.db = db
         self.rules = rules
         self.spam_config = spam_config
         self._current_smtp: Optional[Union[smtplib.SMTP, smtplib.SMTP_SSL]] = None
 
-    def process_account(self, imap_config: ImapConfig):
+    def process_account(self, imap_config: ImapConfig) -> None:
         logger.info(f"Connecting to {imap_config.name} ({imap_config.host})...")
 
         self._current_smtp = None
@@ -162,7 +164,7 @@ class ProcessingService:
                     pass
                 self._current_smtp = None
 
-    def _handle_spam(self, client: IMAPClient, uid: int, config: ImapConfig):
+    def _handle_spam(self, client: IMAPClient, uid: int, config: ImapConfig) -> None:
         if config.spamAction == SpamAction.DELETE:
             client.add_flags(uid, [b"\\Deleted"])
         elif config.spamAction == SpamAction.MOVE:
@@ -243,7 +245,7 @@ class ProcessingService:
         rule: Rule,
         msg: email.message.Message,
         config: ImapConfig,
-    ):
+    ) -> None:
         if rule.actionType == ActionType.MOVE:
             if rule.destValue:
                 if not client.folder_exists(rule.destValue):
@@ -313,7 +315,7 @@ class ProcessingService:
 
     def _forward_message(
         self, original_msg: email.message.Message, to_addr: str, config: ImapConfig
-    ):
+    ) -> None:
         fwd = EmailMessage()
         fwd["Subject"] = f"Fwd: {original_msg.get('Subject', '')}"
         fwd["From"] = config.username
@@ -325,12 +327,15 @@ class ProcessingService:
         )
 
         if not self._current_smtp:
+            smtp_timeout = config.connectionTimeoutMs / 1000.0
             if config.smtpSsl:
                 self._current_smtp = smtplib.SMTP_SSL(
-                    config.smtpHost, int(config.smtpPort)
+                    config.smtpHost, int(config.smtpPort), timeout=smtp_timeout
                 )
             else:
-                self._current_smtp = smtplib.SMTP(config.smtpHost, int(config.smtpPort))
+                self._current_smtp = smtplib.SMTP(
+                    config.smtpHost, int(config.smtpPort), timeout=smtp_timeout
+                )
                 self._current_smtp.starttls()
             if config.smtpAuth:
                 self._current_smtp.login(config.smtpUsername, config.smtpPassword)
