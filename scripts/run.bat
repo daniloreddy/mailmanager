@@ -13,4 +13,4 @@ call venv\Scripts\activate.bat
 :: Optional: set REQUIRE_AUTH=true
 :: Optional: set PORT=8080
 
-python main.py
+python -m app.main %*

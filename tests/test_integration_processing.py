@@ -1,18 +1,19 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-from unittest.mock import patch
-from mailmanager.processing import ProcessingService
-from mailmanager.db import Db
-from mailmanager.models import (
+
+from app.db import Db
+from app.models import (
+    ActionType,
+    ConditionOperator,
+    ConditionSubject,
     ImapConfig,
     Rule,
     SpamAssassinConfig,
     State,
-    ActionType,
-    ConditionOperator,
-    ConditionSubject,
 )
+from app.processing import ProcessingService
 
 
 @pytest.fixture
@@ -24,12 +25,12 @@ def test_process_account_integration(mock_db: Db) -> None:
     # Setup
     imap_cfg = ImapConfig(name="test", host="localhost", username="u", password="p")
     rule = Rule(
-        imapConfigName="test",
-        actionType=ActionType.MOVE,
-        conditionOperator=ConditionOperator.CONTAINS,
-        conditionSubject=ConditionSubject.SUBJECT,
-        conditionValue="MoveMe",
-        destValue="TargetFolder",
+        imap_config_name="test",
+        action_type=ActionType.MOVE,
+        condition_operator=ConditionOperator.CONTAINS,
+        condition_subject=ConditionSubject.SUBJECT,
+        condition_value="MoveMe",
+        dest_value="TargetFolder",
     )
     mock_db.save_imaps([imap_cfg])
     mock_db.save_rule(rule)
@@ -37,7 +38,7 @@ def test_process_account_integration(mock_db: Db) -> None:
     service = ProcessingService(mock_db, [rule], SpamAssassinConfig(enabled=False))
 
     # Mock IMAPClient
-    with patch("mailmanager.processing.IMAPClient") as MockIMAP:
+    with patch("app.processing.IMAPClient") as MockIMAP:
         client = MockIMAP.return_value.__enter__.return_value
         client.select_folder.return_value = {b"UIDVALIDITY": 123, b"UIDNEXT": 10}
 
@@ -55,7 +56,10 @@ def test_process_account_integration(mock_db: Db) -> None:
 
         # Check state update
         default_state = State(
-            imapConfigName="test", folder="INBOX", uidValidity=0, lastProcessedUid=0
+            imap_config_name="test",
+            folder="INBOX",
+            uid_validity=0,
+            last_processed_uid=0,
         )
         state = mock_db.get_state("test:INBOX", default_state)
-        assert state.lastProcessedUid == 1
+        assert state.last_processed_uid == 1

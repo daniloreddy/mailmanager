@@ -6,7 +6,6 @@ import os
 import secrets
 import time
 from pathlib import Path
-from typing import Optional
 
 import jwt
 from fastapi import Response
@@ -14,9 +13,7 @@ from fastapi import Response
 logger = logging.getLogger(__name__)
 
 _TRUSTED_PROXIES: frozenset[str] = frozenset(
-    s.strip()
-    for s in os.environ.get("TRUSTED_PROXIES", "127.0.0.1").split(",")
-    if s.strip()
+    s.strip() for s in os.environ.get("TRUSTED_PROXIES", "127.0.0.1").split(",") if s.strip()
 )
 
 
@@ -99,7 +96,7 @@ class AuthManager:
     def clear_cookie(self, response: Response) -> None:
         response.delete_cookie(self.cookie_name)
 
-    def client_ip(self, headers: dict, client_host: Optional[str]) -> str:
+    def client_ip(self, headers: dict, client_host: str | None) -> str:
         if client_host in _TRUSTED_PROXIES:
             cf = headers.get("cf-connecting-ip", "")
             if cf:
@@ -109,7 +106,7 @@ class AuthManager:
                 return fwd.split(",")[0].strip()
         return client_host or "unknown"
 
-    def _check_rate_limit(self, ip: str) -> Optional[str]:
+    def _check_rate_limit(self, ip: str) -> str | None:
         now = time.time()
         self._global_times = [t for t in self._global_times if now - t < 60]
         self._global_times.append(now)
@@ -135,7 +132,7 @@ class AuthManager:
         self._failed.pop(ip, None)
         self._blocked.pop(ip, None)
 
-    def attempt_login(self, password: str, ip: str) -> tuple[bool, Optional[str]]:
+    def attempt_login(self, password: str, ip: str) -> tuple[bool, str | None]:
         err = self._check_rate_limit(ip)
         if err:
             return False, err

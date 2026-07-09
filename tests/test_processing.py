@@ -2,15 +2,16 @@ import email
 from typing import cast
 
 import pytest
-from mailmanager.db import Db
-from mailmanager.processing import ProcessingService
-from mailmanager.models import (
-    Rule,
+
+from app.db import Db
+from app.models import (
     ActionType,
     ConditionOperator,
     ConditionSubject,
+    Rule,
     SpamAssassinConfig,
 )
+from app.processing import ProcessingService
 
 
 @pytest.fixture
@@ -33,11 +34,11 @@ def test_get_value_to_check_message(service: ProcessingService) -> None:
 
 def test_evaluate_rule_contains(service: ProcessingService) -> None:
     rule = Rule(
-        imapConfigName="test",
-        actionType=ActionType.MOVE,
-        conditionOperator=ConditionOperator.CONTAINS,
-        conditionSubject=ConditionSubject.SUBJECT,
-        conditionValue="URGENT",
+        imap_config_name="test",
+        action_type=ActionType.MOVE,
+        condition_operator=ConditionOperator.CONTAINS,
+        condition_subject=ConditionSubject.SUBJECT,
+        condition_value="URGENT",
     )
     msg = email.message_from_string("Subject: This is URGENT!\n\nBody")
     assert service._evaluate_rule(rule, msg) is True
@@ -48,11 +49,11 @@ def test_evaluate_rule_contains(service: ProcessingService) -> None:
 
 def test_evaluate_rule_regex(service: ProcessingService) -> None:
     rule = Rule(
-        imapConfigName="test",
-        actionType=ActionType.MOVE,
-        conditionOperator=ConditionOperator.REGEX,
-        conditionSubject=ConditionSubject.FROM,
-        conditionValue=r".*@gmail\.com",
+        imap_config_name="test",
+        action_type=ActionType.MOVE,
+        condition_operator=ConditionOperator.REGEX,
+        condition_subject=ConditionSubject.FROM,
+        condition_value=r".*@gmail\.com",
     )
     msg = email.message_from_string("From: user@gmail.com\n\nBody")
     assert service._evaluate_rule(rule, msg) is True
@@ -63,12 +64,12 @@ def test_evaluate_rule_regex(service: ProcessingService) -> None:
 
 def test_evaluate_rule_case_sensitive(service: ProcessingService) -> None:
     rule = Rule(
-        imapConfigName="test",
-        actionType=ActionType.MOVE,
-        conditionOperator=ConditionOperator.EQUALS,
-        conditionSubject=ConditionSubject.SUBJECT,
-        conditionValue="ExactMatch",
-        caseSensitive=True,
+        imap_config_name="test",
+        action_type=ActionType.MOVE,
+        condition_operator=ConditionOperator.EQUALS,
+        condition_subject=ConditionSubject.SUBJECT,
+        condition_value="ExactMatch",
+        case_sensitive=True,
     )
     msg = email.message_from_string("Subject: ExactMatch\n\nBody")
     assert service._evaluate_rule(rule, msg) is True
@@ -86,9 +87,7 @@ def test_get_value_to_check_rfc2047_subject(service: ProcessingService) -> None:
 
 def test_get_value_to_check_rfc2047_from(service: ProcessingService) -> None:
     # "Marco Rossi" QP-encoded in UTF-8
-    msg = email.message_from_string(
-        "From: =?utf-8?q?Marco_Rossi?= <marco@example.com>\n\nBody"
-    )
+    msg = email.message_from_string("From: =?utf-8?q?Marco_Rossi?= <marco@example.com>\n\nBody")
     val = service._get_value_to_check(ConditionSubject.FROM, msg)
     assert "Marco Rossi" in val
 
@@ -108,14 +107,14 @@ def test_get_value_to_check_latin1_body(service: ProcessingService) -> None:
 def test_evaluate_rule_regex_case_insensitive_no_pattern_corruption(
     service: ProcessingService,
 ) -> None:
-    # \S+ must NOT become \s+ when caseSensitive=False
+    # \S+ must NOT become \s+ when case_sensitive=False
     rule = Rule(
-        imapConfigName="test",
-        actionType=ActionType.MOVE,
-        conditionOperator=ConditionOperator.REGEX,
-        conditionSubject=ConditionSubject.FROM,
-        conditionValue=r"\S+@\S+",
-        caseSensitive=False,
+        imap_config_name="test",
+        action_type=ActionType.MOVE,
+        condition_operator=ConditionOperator.REGEX,
+        condition_subject=ConditionSubject.FROM,
+        condition_value=r"\S+@\S+",
+        case_sensitive=False,
     )
     msg = email.message_from_string("From: user@example.com\n\nBody")
     assert service._evaluate_rule(rule, msg) is True
@@ -128,11 +127,11 @@ def test_evaluate_rule_regex_invalid_pattern_returns_false(
     service: ProcessingService,
 ) -> None:
     rule = Rule(
-        imapConfigName="test",
-        actionType=ActionType.MOVE,
-        conditionOperator=ConditionOperator.REGEX,
-        conditionSubject=ConditionSubject.SUBJECT,
-        conditionValue=r"[unclosed",
+        imap_config_name="test",
+        action_type=ActionType.MOVE,
+        condition_operator=ConditionOperator.REGEX,
+        condition_subject=ConditionSubject.SUBJECT,
+        condition_value=r"[unclosed",
     )
     msg = email.message_from_string("Subject: test\n\nBody")
     assert service._evaluate_rule(rule, msg) is False  # no re.error propagates
@@ -142,12 +141,12 @@ def test_evaluate_rule_regex_case_insensitive_matches(
     service: ProcessingService,
 ) -> None:
     rule = Rule(
-        imapConfigName="test",
-        actionType=ActionType.MOVE,
-        conditionOperator=ConditionOperator.REGEX,
-        conditionSubject=ConditionSubject.SUBJECT,
-        conditionValue=r"invoice",
-        caseSensitive=False,
+        imap_config_name="test",
+        action_type=ActionType.MOVE,
+        condition_operator=ConditionOperator.REGEX,
+        condition_subject=ConditionSubject.SUBJECT,
+        condition_value=r"invoice",
+        case_sensitive=False,
     )
     msg = email.message_from_string("Subject: INVOICE #1234\n\nBody")
     assert service._evaluate_rule(rule, msg) is True

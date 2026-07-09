@@ -7,9 +7,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
 _VENV_DIR = _ROOT / ("venv" if sys.platform == "win32" else ".venv")
-_VENV_PYTHON = _VENV_DIR / (
-    "Scripts/python.exe" if sys.platform == "win32" else "bin/python"
-)
+_VENV_PYTHON = _VENV_DIR / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
 
 
 def _bootstrap() -> None:

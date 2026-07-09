@@ -123,13 +123,15 @@ For manual (non-Docker) runs, `HOST` is read directly from `.env`/the shell envi
 # Windows
 python -m venv venv
 ./venv/Scripts/pip install -r requirements.txt -r requirements.dev.txt
-./venv/Scripts/python main.py
+./venv/Scripts/python -m app.main
 
 # Linux/Mac
 python3 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt -r requirements.dev.txt
-./.venv/bin/python main.py
+./.venv/bin/python -m app.main
 ```
+
+CLI flags (override the env vars above for a single run): `--host`, `--port`, `--dev` (uvicorn reload), `--env-file`.
 
 ---
 

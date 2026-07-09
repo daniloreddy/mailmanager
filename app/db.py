@@ -1,15 +1,15 @@
 import json
-import sqlite3
 import logging
+import sqlite3
 from pathlib import Path
-from typing import List, Dict
+
 from .models import (
     ImapConfig,
+    LoggingConfig,
     Rule,
+    SchedulerConfig,
     SpamAssassinConfig,
     State,
-    SchedulerConfig,
-    LoggingConfig,
     UiConfig,
 )
 
@@ -60,13 +60,9 @@ class Db:
 
     def _migrate_from_json(self) -> None:
         old_files = {
-            "imap-servers.json": lambda items: self.save_imaps(
-                [ImapConfig(**i) for i in items]
-            ),
+            "imap-servers.json": lambda items: self.save_imaps([ImapConfig(**i) for i in items]),
             "rules.json": lambda items: [self.save_rule(Rule(**i)) for i in items],
-            "spam-assassin.json": lambda data: self.save_spam_config(
-                SpamAssassinConfig(**data)
-            ),
+            "spam-assassin.json": lambda data: self.save_spam_config(SpamAssassinConfig(**data)),
             "processing-state.json": lambda data: self.save_states(
                 {k: State(**v) for k, v in data.items()}
             ),
@@ -76,7 +72,7 @@ class Db:
             filepath = self.data_dir / filename
             if filepath.exists():
                 try:
-                    with open(filepath, "r", encoding="utf-8") as f:
+                    with open(filepath, encoding="utf-8") as f:
                         data = json.load(f)
                     save_func(data)
                     filepath.unlink()
@@ -97,26 +93,26 @@ class Db:
             c = conn.cursor()
             c.execute(
                 "INSERT OR REPLACE INTO spam_config (id, data) VALUES (1, ?)",
-                (json.dumps(config.model_dump(exclude_none=True)),),
+                (json.dumps(config.model_dump(exclude_none=True, by_alias=True)),),
             )
 
-    def load_imaps(self) -> List[ImapConfig]:
+    def load_imaps(self) -> list[ImapConfig]:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             c.execute("SELECT data FROM imap_configs")
             rows = c.fetchall()
         return [ImapConfig(**json.loads(r[0])) for r in rows]
 
-    def save_imaps(self, imaps: List[ImapConfig]) -> None:
+    def save_imaps(self, imaps: list[ImapConfig]) -> None:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             for imap in imaps:
                 c.execute(
                     "INSERT OR REPLACE INTO imap_configs (name, data) VALUES (?, ?)",
-                    (imap.name, json.dumps(imap.model_dump(exclude_none=True))),
+                    (imap.name, json.dumps(imap.model_dump(exclude_none=True, by_alias=True))),
                 )
 
-    def load_rules(self) -> List[Rule]:
+    def load_rules(self) -> list[Rule]:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             c.execute("SELECT id, data FROM rules ORDER BY id ASC")
@@ -131,7 +127,7 @@ class Db:
     def save_rule(self, rule: Rule) -> Rule:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
-            data = json.dumps(rule.model_dump(exclude={"id"}, exclude_none=True))
+            data = json.dumps(rule.model_dump(exclude={"id"}, exclude_none=True, by_alias=True))
             if rule.id is not None:
                 c.execute("UPDATE rules SET data = ? WHERE id = ?", (data, rule.id))
             else:
@@ -149,20 +145,20 @@ class Db:
             c = conn.cursor()
             c.execute("DELETE FROM imap_configs WHERE name = ?", (name,))
 
-    def load_states(self) -> Dict[str, State]:
+    def load_states(self) -> dict[str, State]:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             c.execute("SELECT key, data FROM states")
             rows = c.fetchall()
         return {k: State(**json.loads(d)) for k, d in rows}
 
-    def save_states(self, states: Dict[str, State]) -> None:
+    def save_states(self, states: dict[str, State]) -> None:
         with sqlite3.connect(self.db_path) as conn:
             c = conn.cursor()
             for k, v in states.items():
                 c.execute(
                     "INSERT OR REPLACE INTO states (key, data) VALUES (?, ?)",
-                    (k, json.dumps(v.model_dump(exclude_none=True))),
+                    (k, json.dumps(v.model_dump(exclude_none=True, by_alias=True))),
                 )
 
     def get_state(self, key: str, default: State) -> State:
@@ -188,7 +184,7 @@ class Db:
             c = conn.cursor()
             c.execute(
                 "INSERT OR REPLACE INTO scheduler_config (id, data) VALUES (1, ?)",
-                (json.dumps(config.model_dump()),),
+                (json.dumps(config.model_dump(by_alias=True)),),
             )
 
     def load_logging_config(self) -> LoggingConfig:
@@ -222,5 +218,5 @@ class Db:
             c = conn.cursor()
             c.execute(
                 "INSERT OR REPLACE INTO ui_config (id, data) VALUES (1, ?)",
-                (json.dumps(config.model_dump()),),
+                (json.dumps(config.model_dump(by_alias=True)),),
             )

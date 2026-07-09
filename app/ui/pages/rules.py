@@ -1,5 +1,3 @@
-from typing import Optional
-
 from nicegui import app as nicegui_app
 from nicegui import ui
 
@@ -29,13 +27,12 @@ async def rules_page() -> None:
                 )
 
             if not rules:
-                ui.label("No rules").classes(
-                    "text-grey-6 text-center q-pa-xl full-width"
-                )
+                ui.label("No rules").classes("text-grey-6 text-center q-pa-xl full-width")
                 return
 
             with ui.row().classes(
-                "q-px-sm q-py-xs text-grey-6 full-width text-caption text-uppercase text-weight-bold"
+                "q-px-sm q-py-xs text-grey-6 full-width text-caption "
+                "text-uppercase text-weight-bold"
             ):
                 ui.label("Account").style("width:130px;")
                 ui.label("Field").style("width:90px;")
@@ -48,28 +45,18 @@ async def rules_page() -> None:
 
             for r in rules:
                 with ui.row().classes("items-center q-px-sm q-py-xs full-width"):
-                    ui.label(r.imapConfigName).classes("text-weight-bold").style(
-                        "width:130px;"
-                    )
-                    ui.label(r.conditionSubject.value).classes("text-grey-6").style(
-                        "width:90px;"
-                    )
-                    ui.label(r.conditionOperator.value).classes("text-grey-6").style(
+                    ui.label(r.imap_config_name).classes("text-weight-bold").style("width:130px;")
+                    ui.label(r.condition_subject.value).classes("text-grey-6").style("width:90px;")
+                    ui.label(r.condition_operator.value).classes("text-grey-6").style(
                         "width:120px;"
                     )
-                    ui.label(r.conditionValue).style("flex:1;")
-                    ui.label(r.actionType.value).classes("text-grey-6").style(
-                        "width:110px;"
-                    )
-                    ui.label(r.destValue or "—").classes("text-grey-6").style(
-                        "width:100px;"
-                    )
+                    ui.label(r.condition_value).style("flex:1;")
+                    ui.label(r.action_type.value).classes("text-grey-6").style("width:110px;")
+                    ui.label(r.dest_value or "—").classes("text-grey-6").style("width:100px;")
                     with ui.row().style("width:100px;").classes("q-gutter-xs"):
                         ui.button(
                             "Edit",
-                            on_click=lambda r=r, names=account_names: open_dialog(
-                                names, r
-                            ),
+                            on_click=lambda r=r, names=account_names: open_dialog(names, r),
                         ).props("flat size=sm")
                         ui.button(
                             "Del",
@@ -77,15 +64,13 @@ async def rules_page() -> None:
                         ).props("flat size=sm color=negative")
                 ui.separator()
 
-    async def open_dialog(
-        account_names: list[str], rule: Optional[Rule] = None
-    ) -> None:
+    async def open_dialog(account_names: list[str], rule: Rule | None = None) -> None:
         is_edit = rule is not None
         r = rule or Rule(
-            imapConfigName=account_names[0] if account_names else "",
-            actionType=ActionType.MOVE,
-            conditionOperator=ConditionOperator.CONTAINS,
-            conditionSubject=ConditionSubject.FROM,
+            imap_config_name=account_names[0] if account_names else "",
+            action_type=ActionType.MOVE,
+            condition_operator=ConditionOperator.CONTAINS,
+            condition_subject=ConditionSubject.FROM,
         )
         title = "Edit Rule" if is_edit else "Add Rule"
 
@@ -94,41 +79,35 @@ async def rules_page() -> None:
 
             account_sel = ui.select(
                 account_names or ["—"],
-                value=r.imapConfigName or (account_names[0] if account_names else ""),
+                value=r.imap_config_name or (account_names[0] if account_names else ""),
                 label="Account",
             ).classes("full-width")
 
             with ui.grid(columns=2).classes("full-width").style("gap:12px;"):
-                field_sel = ui.select(
-                    _FIELDS, value=r.conditionSubject.value, label="Field"
-                )
-                op_sel = ui.select(
-                    _OPERATORS, value=r.conditionOperator.value, label="Operator"
-                )
+                field_sel = ui.select(_FIELDS, value=r.condition_subject.value, label="Field")
+                op_sel = ui.select(_OPERATORS, value=r.condition_operator.value, label="Operator")
 
-            value_inp = ui.input("Value", value=r.conditionValue).classes("full-width")
+            value_inp = ui.input("Value", value=r.condition_value).classes("full-width")
 
             with ui.grid(columns=2).classes("full-width").style("gap:12px;"):
-                action_sel = ui.select(
-                    _ACTIONS, value=r.actionType.value, label="Action"
-                )
-                dest_inp = ui.input("Destination / Label", value=r.destValue)
+                action_sel = ui.select(_ACTIONS, value=r.action_type.value, label="Action")
+                dest_inp = ui.input("Destination / Label", value=r.dest_value)
 
-            case_chk = ui.checkbox("Case Sensitive", value=r.caseSensitive)
+            case_chk = ui.checkbox("Case Sensitive", value=r.case_sensitive)
 
             async def save() -> None:
                 try:
                     new_rule = Rule(
                         id=r.id if is_edit else None,
-                        imapConfigName=str(account_sel.value or ""),
-                        conditionSubject=ConditionSubject(field_sel.value),
-                        conditionOperator=ConditionOperator(op_sel.value),
-                        conditionValue=str(value_inp.value or ""),
-                        actionType=ActionType(action_sel.value),
-                        destValue=str(dest_inp.value or ""),
-                        caseSensitive=bool(case_chk.value),
+                        imap_config_name=str(account_sel.value or ""),
+                        condition_subject=ConditionSubject(field_sel.value),
+                        condition_operator=ConditionOperator(op_sel.value),
+                        condition_value=str(value_inp.value or ""),
+                        action_type=ActionType(action_sel.value),
+                        dest_value=str(dest_inp.value or ""),
+                        case_sensitive=bool(case_chk.value),
                     )
-                    if not new_rule.imapConfigName:
+                    if not new_rule.imap_config_name:
                         ui.notify("Account is required", type="negative")
                         return
                     db.save_rule(new_rule)
@@ -139,22 +118,18 @@ async def rules_page() -> None:
                     ui.notify(f"Error: {exc}", type="negative")
 
             with ui.row().classes("justify-end q-mt-md q-gutter-xs"):
-                ui.button("Cancel", on_click=dialog.close).props("flat").classes(
-                    "text-grey-6"
-                )
+                ui.button("Cancel", on_click=dialog.close).props("flat").classes("text-grey-6")
                 ui.button("Save", on_click=save).props("color=primary")
 
         dialog.open()
 
-    async def confirm_delete(rule_id: Optional[int]) -> None:
+    async def confirm_delete(rule_id: int | None) -> None:
         if rule_id is None:
             return
         with ui.dialog() as dlg, ui.card():
             ui.label("Delete this rule?").classes("text-h6 q-mb-md")
             with ui.row().classes("justify-end q-gutter-xs"):
-                ui.button("Cancel", on_click=dlg.close).props("flat").classes(
-                    "text-grey-6"
-                )
+                ui.button("Cancel", on_click=dlg.close).props("flat").classes("text-grey-6")
 
                 async def do_delete() -> None:
                     db.delete_rule(rule_id)

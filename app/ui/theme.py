@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Any, Generator
+from typing import Any
 
 from nicegui import app as ng_app
 from nicegui import ui

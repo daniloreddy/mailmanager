@@ -1,6 +1,7 @@
 import pytest
-from mailmanager.spamassassin import SpamAssassinClient
-from mailmanager.models import SpamAssassinConfig
+
+from app.models import SpamAssassinConfig
+from app.spamassassin import SpamAssassinClient
 
 
 @pytest.fixture
@@ -25,7 +26,9 @@ def test_parse_spam_header_false(client: SpamAssassinClient) -> None:
 
 
 def test_parse_headers(client: SpamAssassinClient) -> None:
-    response = "SPAMD/1.5 0 EX_OK\r\nSpam: True ; score=10.5 / required=5.0\r\nContent-length: 0\r\n\r\n"
+    response = (
+        "SPAMD/1.5 0 EX_OK\r\nSpam: True ; score=10.5 / required=5.0\r\nContent-length: 0\r\n\r\n"
+    )
     headers = client._parse_headers(response)
     assert headers["spam"] == "True ; score=10.5 / required=5.0"
     assert headers["content-length"] == "0"

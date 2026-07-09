@@ -1,15 +1,16 @@
 import socket
-from typing import Tuple
+
 from pydantic import BaseModel
+
 from .models import SpamAssassinConfig
 
 
 class CheckResult(BaseModel):
     ok: bool
-    isSpam: bool
+    is_spam: bool
     score: float
     threshold: float
-    rawResponse: str
+    raw_response: str
 
 
 class SpamAssassinClient:
@@ -22,7 +23,7 @@ class SpamAssassinClient:
         except Exception as e:
             # Fallback if SpamAssassin is down
             return CheckResult(
-                ok=False, isSpam=False, score=0.0, threshold=0.0, rawResponse=str(e)
+                ok=False, is_spam=False, score=0.0, threshold=0.0, raw_response=str(e)
             )
 
         headers = self._parse_headers(resp)
@@ -31,35 +32,35 @@ class SpamAssassinClient:
         if not spam_header:
             return CheckResult(
                 ok=False,
-                isSpam=False,
+                is_spam=False,
                 score=0.0,
                 threshold=0.0,
-                rawResponse="Missing 'Spam' header",
+                raw_response="Missing 'Spam' header",
             )
 
         try:
             is_spam, score, threshold = self._parse_spam_header(spam_header)
             return CheckResult(
                 ok=True,
-                isSpam=is_spam,
+                is_spam=is_spam,
                 score=score,
                 threshold=threshold,
-                rawResponse=resp,
+                raw_response=resp,
             )
         except Exception as e:
             return CheckResult(
                 ok=False,
-                isSpam=False,
+                is_spam=False,
                 score=0.0,
                 threshold=0.0,
-                rawResponse=f"Parse error: {e}",
+                raw_response=f"Parse error: {e}",
             )
 
     def _send_with_body(self, cmd: str, body: bytes) -> str:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(self.config.connectTimeoutMillis / 1000.0)
+            s.settimeout(self.config.connect_timeout_millis / 1000.0)
             s.connect((self.config.host, self.config.port))
-            s.settimeout(self.config.readTimeoutMillis / 1000.0)
+            s.settimeout(self.config.read_timeout_millis / 1000.0)
 
             req = f"{cmd} SPAMC/1.5\r\n"
             req += f"Content-length: {len(body)}\r\n"
@@ -89,7 +90,7 @@ class SpamAssassinClient:
                 headers[k.strip().lower()] = v.strip()
         return headers
 
-    def _parse_spam_header(self, header_value: str) -> Tuple[bool, float, float]:
+    def _parse_spam_header(self, header_value: str) -> tuple[bool, float, float]:
         v = header_value.strip()
         is_spam = False
         if v.lower().startswith("true"):
@@ -104,9 +105,7 @@ class SpamAssassinClient:
 
         parts = v.split("/")
         if len(parts) != 2:
-            raise ValueError(
-                f"Cannot parse score/threshold in 'Spam' header: {header_value}"
-            )
+            raise ValueError(f"Cannot parse score/threshold in 'Spam' header: {header_value}")
 
         left = parts[0].replace("score=", "").strip()
         right = parts[1].replace("required=", "").strip()

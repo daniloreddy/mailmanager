@@ -1,1 +1,0 @@
-# MailManager Python Package

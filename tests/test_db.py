@@ -1,13 +1,14 @@
 from pathlib import Path
 
 import pytest
-from mailmanager.db import Db
-from mailmanager.models import (
-    ImapConfig,
-    Rule,
+
+from app.db import Db
+from app.models import (
     ActionType,
     ConditionOperator,
     ConditionSubject,
+    ImapConfig,
+    Rule,
 )
 
 
@@ -22,9 +23,7 @@ def test_db_init(db: Db) -> None:
 
 
 def test_imap_config_crud(db: Db) -> None:
-    cfg = ImapConfig(
-        name="test_account", host="imap.test.com", username="user", password="pass"
-    )
+    cfg = ImapConfig(name="test_account", host="imap.test.com", username="user", password="pass")
     db.save_imaps([cfg])
 
     loaded = db.load_imaps()
@@ -35,36 +34,36 @@ def test_imap_config_crud(db: Db) -> None:
 
 def test_rule_crud(db: Db) -> None:
     rule = Rule(
-        imapConfigName="test_account",
-        actionType=ActionType.MOVE,
-        conditionOperator=ConditionOperator.CONTAINS,
-        conditionSubject=ConditionSubject.SUBJECT,
-        conditionValue="test",
+        imap_config_name="test_account",
+        action_type=ActionType.MOVE,
+        condition_operator=ConditionOperator.CONTAINS,
+        condition_subject=ConditionSubject.SUBJECT,
+        condition_value="test",
     )
     db.save_rule(rule)
 
     rules = db.load_rules()
     assert len(rules) == 1
-    assert rules[0].imapConfigName == "test_account"
+    assert rules[0].imap_config_name == "test_account"
     assert rules[0].id is not None
 
     # Update
     rule_id = rules[0].id
-    rules[0].conditionValue = "updated"
+    rules[0].condition_value = "updated"
     db.save_rule(rules[0])
 
     updated_rules = db.load_rules()
-    assert updated_rules[0].conditionValue == "updated"
+    assert updated_rules[0].condition_value == "updated"
     assert updated_rules[0].id == rule_id
 
 
 def test_delete_rule(db: Db) -> None:
     rule = Rule(
-        imapConfigName="test",
-        actionType=ActionType.DELETE,
-        conditionOperator=ConditionOperator.EQUALS,
-        conditionSubject=ConditionSubject.FROM,
-        conditionValue="spam@spam.com",
+        imap_config_name="test",
+        action_type=ActionType.DELETE,
+        condition_operator=ConditionOperator.EQUALS,
+        condition_subject=ConditionSubject.FROM,
+        condition_value="spam@spam.com",
     )
     db.save_rule(rule)
     rules = db.load_rules()

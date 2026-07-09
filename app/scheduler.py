@@ -2,7 +2,6 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 from .db import Db
 from .processing import ProcessingService
@@ -13,9 +12,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SchedulerStatus:
     is_running: bool = False
-    last_run_at: Optional[float] = None
-    next_run_at: Optional[float] = None
-    last_error: Optional[str] = None
+    last_run_at: float | None = None
+    next_run_at: float | None = None
+    last_error: str | None = None
     run_count: int = 0
 
 
@@ -25,13 +24,14 @@ class SchedulerService:
         self._stop_event = asyncio.Event()
         self._run_now_event = asyncio.Event()
         self._status = SchedulerStatus()
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
     def start(self) -> None:
         self._task = asyncio.create_task(self._loop())
 
     async def stop(self) -> None:
         self._stop_event.set()
+        self._run_now_event.set()  # wake _loop() if it's sleeping in wait_for
         if self._task:
             await self._task
 
@@ -50,15 +50,15 @@ class SchedulerService:
             if cfg.enabled:
                 await self._do_run()
 
-            self._status.next_run_at = time.time() + cfg.intervalSeconds
+            self._status.next_run_at = time.time() + cfg.interval_seconds
 
             try:
                 await asyncio.wait_for(
                     self._run_now_event.wait(),
-                    timeout=cfg.intervalSeconds,
+                    timeout=cfg.interval_seconds,
                 )
                 self._run_now_event.clear()
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     async def _do_run(self) -> None:

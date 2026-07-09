@@ -32,18 +32,18 @@ async def settings_page() -> None:
                 ui.label("SpamAssassin").classes("text-h6 q-mb-md")
 
                 spam_enabled = ui.checkbox("Enabled", value=spam.enabled)
-                with (
-                    ui.grid(columns=2).classes("full-width q-mt-sm").style("gap:12px;")
-                ):
+                with ui.grid(columns=2).classes("full-width q-mt-sm").style("gap:12px;"):
                     spam_host = ui.input("Host", value=spam.host)
                     spam_port = ui.number("Port", value=spam.port, min=1, max=65535)
                     spam_user = ui.input("User (optional)", value=spam.user or "")
                 with ui.grid(columns=2).classes("full-width").style("gap:12px;"):
                     spam_conn_ms = ui.number(
-                        "Connect Timeout (ms)", value=spam.connectTimeoutMillis, min=0
+                        "Connect Timeout (ms)",
+                        value=spam.connect_timeout_millis,
+                        min=0,
                     )
                     spam_read_ms = ui.number(
-                        "Read Timeout (ms)", value=spam.readTimeoutMillis, min=0
+                        "Read Timeout (ms)", value=spam.read_timeout_millis, min=0
                     )
 
                 async def save_spam() -> None:
@@ -53,17 +53,17 @@ async def settings_page() -> None:
                             host=str(spam_host.value or "127.0.0.1"),
                             port=int(spam_port.value or 783),
                             user=str(spam_user.value) or None,
-                            connectTimeoutMillis=int(spam_conn_ms.value or 3000),
-                            readTimeoutMillis=int(spam_read_ms.value or 5000),
+                            connect_timeout_millis=int(spam_conn_ms.value or 3000),
+                            read_timeout_millis=int(spam_read_ms.value or 5000),
                         )
                         db.save_spam_config(cfg)
                         ui.notify("Saved", type="positive")
                     except Exception as exc:
                         ui.notify(f"Error: {exc}", type="negative")
 
-                ui.button("Save", on_click=save_spam).props(
-                    "color=primary size=sm"
-                ).classes("q-mt-sm")
+                ui.button("Save", on_click=save_spam).props("color=primary size=sm").classes(
+                    "q-mt-sm"
+                )
 
             # ── Scheduler ──────────────────────────────────────────────
             with ui.card().classes("full-width q-pa-md"):
@@ -71,23 +71,23 @@ async def settings_page() -> None:
 
                 sched_enabled = ui.checkbox("Enabled", value=sched.enabled)
                 sched_interval = ui.number(
-                    "Interval (seconds)", value=sched.intervalSeconds, min=1
+                    "Interval (seconds)", value=sched.interval_seconds, min=1
                 ).classes("q-mt-sm")
 
                 async def save_sched() -> None:
                     try:
                         cfg = SchedulerConfig(
                             enabled=bool(sched_enabled.value),
-                            intervalSeconds=int(sched_interval.value or 300),
+                            interval_seconds=int(sched_interval.value or 300),
                         )
                         db.save_scheduler_config(cfg)
                         ui.notify("Saved", type="positive")
                     except Exception as exc:
                         ui.notify(f"Error: {exc}", type="negative")
 
-                ui.button("Save", on_click=save_sched).props(
-                    "color=primary size=sm"
-                ).classes("q-mt-sm")
+                ui.button("Save", on_click=save_sched).props("color=primary size=sm").classes(
+                    "q-mt-sm"
+                )
 
             # ── Logging ────────────────────────────────────────────────
             with ui.card().classes("full-width q-pa-md"):
@@ -104,9 +104,9 @@ async def settings_page() -> None:
                     except Exception as exc:
                         ui.notify(f"Error: {exc}", type="negative")
 
-                ui.button("Save", on_click=save_log).props(
-                    "color=primary size=sm"
-                ).classes("q-mt-sm")
+                ui.button("Save", on_click=save_log).props("color=primary size=sm").classes(
+                    "q-mt-sm"
+                )
 
             # ── Interfaccia ────────────────────────────────────────────
             with ui.card().classes("full-width q-pa-md"):
@@ -115,23 +115,25 @@ async def settings_page() -> None:
                     ui.badge("hot-reload").props("color=positive")
 
                 ui_refresh_enabled = ui.checkbox(
-                    "Auto-refresh dashboards", value=ui_cfg.autoRefreshEnabled
+                    "Auto-refresh dashboards", value=ui_cfg.auto_refresh_enabled
                 )
                 ui_refresh_secs = ui.number(
-                    "Refresh interval (seconds)", value=ui_cfg.autoRefreshSeconds, min=1
+                    "Refresh interval (seconds)",
+                    value=ui_cfg.auto_refresh_seconds,
+                    min=1,
                 ).classes("q-mt-sm")
 
                 async def save_ui() -> None:
                     try:
                         cfg = UiConfig(
-                            autoRefreshEnabled=bool(ui_refresh_enabled.value),
-                            autoRefreshSeconds=int(ui_refresh_secs.value or 30),
+                            auto_refresh_enabled=bool(ui_refresh_enabled.value),
+                            auto_refresh_seconds=int(ui_refresh_secs.value or 30),
                         )
                         db.save_ui_config(cfg)
                         ui.notify("Saved", type="positive")
                     except Exception as exc:
                         ui.notify(f"Error: {exc}", type="negative")
 
-                ui.button("Save", on_click=save_ui).props(
-                    "color=primary size=sm"
-                ).classes("q-mt-sm")
+                ui.button("Save", on_click=save_ui).props("color=primary size=sm").classes(
+                    "q-mt-sm"
+                )

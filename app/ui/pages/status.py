@@ -1,17 +1,16 @@
 from datetime import datetime
-from typing import Optional
 
 from nicegui import app as nicegui_app
 from nicegui import ui
 
+from ...tz import get_timezone
 from ..components import metric_card
 from ..theme import base_layout
-from ...tz import get_timezone
 
 _TZ = get_timezone()
 
 
-def _fmt(epoch: Optional[float]) -> str:
+def _fmt(epoch: float | None) -> str:
     if not epoch:
         return "—"
     return datetime.fromtimestamp(epoch, tz=_TZ).strftime("%m/%d/%Y %H:%M:%S")
@@ -37,9 +36,7 @@ async def status_page() -> None:
 
         if s.last_error:
             with ui.card().classes("q-pa-sm q-mb-md full-width"):
-                ui.label(f"Last error: {s.last_error}").classes(
-                    "text-negative text-body2"
-                )
+                ui.label(f"Last error: {s.last_error}").classes("text-negative text-body2")
 
         async def run_now() -> None:
             if scheduler.trigger_run_now():
@@ -63,14 +60,12 @@ async def status_page() -> None:
                 .style("text-align:right; width:100%")
             )
 
-            if ui_cfg.autoRefreshEnabled and ui_cfg.autoRefreshSeconds > 0:
-                interval = ui_cfg.autoRefreshSeconds
+            if ui_cfg.auto_refresh_enabled and ui_cfg.auto_refresh_seconds > 0:
+                interval = ui_cfg.auto_refresh_seconds
 
                 def _update_lbl() -> None:
                     now = datetime.now(_TZ).strftime("%H:%M:%S")
-                    refresh_lbl.set_text(
-                        f"Aggiornato: {now} · auto-refresh {interval}s"
-                    )
+                    refresh_lbl.set_text(f"Aggiornato: {now} · auto-refresh {interval}s")
 
                 def _refresh() -> None:
                     content.refresh()
