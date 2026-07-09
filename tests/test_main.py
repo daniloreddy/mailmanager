@@ -24,16 +24,14 @@ def data_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def app(data_dir: Path) -> Generator[FastAPI, None, None]:
-    # app.main reads REQUIRE_AUTH/MAILMANAGER_DATA_DIR at import time, so
-    # these must be set before the first import — never point this at the real
-    # data/ directory (uvicorn.md §6).
+    # app.main reads MAILMANAGER_DATA_DIR at import time, so it must be set
+    # before the first import — never point this at the real data/ directory
+    # (uvicorn.md §6).
     mp = MonkeyPatch()
     mp.setenv("MAILMANAGER_DATA_DIR", str(data_dir))
-    mp.setenv("REQUIRE_AUTH", "true")
 
     import app.main as main_module
 
-    assert main_module.auth is not None
     main_module.auth.set_password(_PASSWORD)
 
     yield main_module.app

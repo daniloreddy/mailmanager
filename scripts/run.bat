@@ -10,7 +10,6 @@ if not exist venv\Scripts\activate.bat (
 
 call venv\Scripts\activate.bat
 
-:: Optional: set REQUIRE_AUTH=true
 :: Optional: set PORT=8080
 
 python -m app.main %*

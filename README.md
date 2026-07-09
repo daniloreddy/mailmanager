@@ -7,7 +7,7 @@ IMAP rule-based email sorter with SpamAssassin integration. Runs as a daemon: Fa
 - **Spam Detection**: Integrated SpamAssassin support via SPAMC protocol.
 - **State Tracking**: IMAP UID tracking to avoid redundant processing.
 - **Web UI**: NiceGUI interface with Status, IMAP, Rules, and Settings tabs (auto-refresh interval configurable).
-- **Auth**: Cookie-based session auth when `REQUIRE_AUTH` is set, independent of network binding (`HOST`/`BIND_HOST`).
+- **Auth**: Cookie-based session auth always required on `/ui`, independent of network binding (`HOST`/`BIND_HOST`).
 - **Docker Ready**: Single container, no external dependencies.
 
 ## Quick Start (Docker)
@@ -22,7 +22,6 @@ mkdir data
 Create `.env` (template: [`.env.example`](.env.example) in the repo):
 
 ```bash
-REQUIRE_AUTH=true        # recommended whenever reachable beyond localhost — see BIND_HOST below
 # PORT=8080             # HTTP port (default 8080)
 # BIND_HOST=127.0.0.1   # host-side publish address — 0.0.0.0 for LAN/reverse-proxy/direct exposure
 # AUTH_SECURE_COOKIE=1              # force Secure flag on session cookie
@@ -79,16 +78,13 @@ Open `http://localhost:8080` — you'll be redirected to the login page; after l
 
 ---
 
-## Auth and network binding are independent
+## Auth is always on; network binding is a separate, independent choice
 
-`REQUIRE_AUTH` and `HOST`/`BIND_HOST` control different things and can be combined freely:
-
-- **`REQUIRE_AUTH`** — whether the dashboard requires a login (cookie session). Set it whenever the app is reachable by anyone other than you, regardless of how it's reached.
-- **`HOST`** (manual/non-Docker runs) / **`BIND_HOST`** (Docker `ports:` publish address) — which interface the server accepts connections on. Default `127.0.0.1` (localhost only); set to `0.0.0.0` to accept connections from other machines.
+Login (cookie session) is always required to reach `/ui` — there's no way to disable it. `HOST`/`BIND_HOST` control something else entirely: which interface the server accepts connections on. Default `127.0.0.1` (localhost only); set to `0.0.0.0` to accept connections from other machines.
 
 Examples:
-- Trusted LAN, `HOST=0.0.0.0`, no auth needed if the network itself is trusted.
-- `HOST=127.0.0.1` (default) behind a Cloudflare Tunnel or SSH reverse tunnel exposed to the internet — bind stays local, but `REQUIRE_AUTH=true` is essential since the tunnel makes it internet-reachable.
+- Trusted LAN, `HOST=0.0.0.0` — still logs in with a password, just reachable from other machines on the LAN.
+- `HOST=127.0.0.1` (default) behind a Cloudflare Tunnel or SSH reverse tunnel exposed to the internet — bind stays local, auth protects the internet-reachable tunnel endpoint.
 
 For manual (non-Docker) runs, `HOST` is read directly from `.env`/the shell environment (default `127.0.0.1`). In Docker, the container's own `127.0.0.1` is unreachable from the host, so `HOST=0.0.0.0` is fixed inside the container (see `docker-compose.yml`) — use `BIND_HOST` to control what's actually reachable from outside the container.
 
@@ -98,7 +94,6 @@ For manual (non-Docker) runs, `HOST` is read directly from `.env`/the shell envi
 
 | Variable | Default | Description |
 |---|---|---|
-| `REQUIRE_AUTH` | _(unset)_ | If `true`: enables cookie login auth on `/ui`. Independent of `HOST`/`BIND_HOST` |
 | `HOST` | `127.0.0.1` | Interface to bind (manual/non-Docker runs only; fixed to `0.0.0.0` inside Docker) |
 | `BIND_HOST` | `127.0.0.1` | Docker only — host-side publish address for the `ports:` mapping |
 | `PORT` | `8080` | HTTP port |

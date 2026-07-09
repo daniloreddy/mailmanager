@@ -14,9 +14,8 @@ python -m venv venv
 ./venv/Scripts/pip install -r requirements.txt -r requirements.dev.txt
 
 # Run
-./venv/Scripts/python -m app.main          # binds 127.0.0.1:8080, no auth; loads ./.env if present
-REQUIRE_AUTH=true ./venv/Scripts/python -m app.main   # auth required; still binds 127.0.0.1 (HOST unset)
-HOST=0.0.0.0 REQUIRE_AUTH=true ./venv/Scripts/python -m app.main   # auth required, reachable beyond localhost
+./venv/Scripts/python -m app.main          # binds 127.0.0.1:8080, auth required; loads ./.env if present
+HOST=0.0.0.0 ./venv/Scripts/python -m app.main   # reachable beyond localhost, auth still required
 PORT=9000 ./venv/Scripts/python -m app.main        # custom port
 ./venv/Scripts/python -m app.main --env-file .env.prod  # load a specific .env file
 ./venv/Scripts/python -m app.main --host 0.0.0.0 --port 9000 --dev  # CLI flags override env vars; --dev enables uvicorn reload
@@ -73,7 +72,7 @@ scripts/
   run.bat / run.sh       Run server locally; auto-creates venv
   set_password.py        CLI to set login password (re-execs into existing venv, no auto-init; also runnable in Docker)
 static/
-  login.html             Self-contained login page (used when REQUIRE_AUTH is set)
+  login.html             Self-contained login page (always used — auth is unconditional on /ui)
 data/
   mailmanager.db         SQLite (imap_configs, rules, spam_config, scheduler_config, logging_config, ui_config, states)
   auth.json              Password hash + JWT secret (auto-created; gitignored)
@@ -121,7 +120,7 @@ Note: `data/mailmanager.*` filenames and the `mailmanager_session` cookie name a
 - Registry: `ghcr.io/daniloreddy/mailmanager`
 - CI/CD: `.github/workflows/docker-publish.yml` (triggers on push to main and tags)
 - Volumes: `/app/data` (SQLite + lock)
-- Env vars: `REQUIRE_AUTH`, `HOST`, `BIND_HOST`, `PORT`, `AUTH_SECURE_COOKIE`, `TRUSTED_PROXIES`, `TZ` (see Key invariants)
+- Env vars: `HOST`, `BIND_HOST`, `PORT`, `AUTH_SECURE_COOKIE`, `TRUSTED_PROXIES`, `TZ` (see Key invariants)
 - `docker-compose.yml`/`docker-compose-dev.yml` set `TZ=${TZ:-UTC}` (container clock), `HOST=0.0.0.0` (fixed — container-internal bind, see Key invariants), `PORT=${PORT:-8080}`, and `NICEGUI_STORAGE_PATH=/app/data/.nicegui` (persists `app.storage.user`, e.g. dark mode, across container recreation); `docker-compose.yml` additionally publishes `ports:` at `${BIND_HOST:-127.0.0.1}:${PORT}:${PORT}` — deployer's choice for external reachability, unrelated to the container-internal `HOST`
 
 ## Key invariants
@@ -135,12 +134,12 @@ Note: `data/mailmanager.*` filenames and the `mailmanager_session` cookie name a
 - `text/html` email bodies are NOT matched by MESSAGE rules (only `text/plain` decoded)
 - STOP action type halts the rule chain but takes no action on the message
 - Pydantic models use snake_case Python attributes; SQLite JSON columns stay camelCase via `model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)` on each model plus `model_dump(by_alias=True)` in `db.py`'s save methods — e.g. `rule.imap_config_name` in Python, `"imapConfigName"` in storage. Loads (`Model(**json.loads(...))`) work unmodified since Pydantic validates aliases by default
-- Auth and network binding are independent settings, deliberately decoupled: `REQUIRE_AUTH` (unset/false → no login; true → cookie session via AuthManager gates the whole app) does not influence `HOST`. `HOST` (default `127.0.0.1`, non-Docker runs only — read directly via `os.environ`, see `app/main.py`) is a pure deployer choice: e.g. `HOST=0.0.0.0` with no auth on a trusted LAN, or `HOST=127.0.0.1` (default) with `REQUIRE_AUTH=true` behind a Cloudflare/SSH tunnel exposed to the internet. In Docker, `HOST=0.0.0.0` is fixed unconditionally inside the container (container's own `127.0.0.1` is unreachable from the host — Docker-networking necessity, not a deployer choice); external reachability there is controlled separately by `BIND_HOST` on the Compose `ports:` mapping. If this invariant ever regresses (`HOST` re-coupled to `REQUIRE_AUTH`), it's a bug — see `uvicorn.md` §2 in global guidelines: "HOST is a deployer choice, not an application concern"
+- Auth on `/ui` is unconditional — cookie session via `AuthManager` always gates the whole dashboard, no opt-out. `HOST` (default `127.0.0.1`, non-Docker runs only — read directly via `os.environ`, see `app/main.py`) is a separate, independent deployer choice about which interface the server binds: e.g. `HOST=0.0.0.0` on a trusted LAN, or `HOST=127.0.0.1` (default) behind a Cloudflare/SSH tunnel exposed to the internet — either way, login is required. In Docker, `HOST=0.0.0.0` is fixed unconditionally inside the container (container's own `127.0.0.1` is unreachable from the host — Docker-networking necessity, not a deployer choice); external reachability there is controlled separately by `BIND_HOST` on the Compose `ports:` mapping. If this invariant ever regresses (a `REQUIRE_AUTH`-style toggle reintroduced to make auth optional), it's a bug — see `fastapi-auth.md` in global guidelines: "there is no REQUIRE_AUTH-style toggle... the cookie gate is always there"
 - NiceGUI is mounted at `/ui` (`ui.run_with(app, mount_path="/ui", ...)`), so `/ui/*` is the cookie-protected surface while `/login`, `/auth/*`, `/health` stay public FastAPI routes at root. `_BYPASS_PREFIXES` excludes `/ui/_nicegui` (verified at runtime against the installed NiceGUI 3.13.0: covers both `/ui/_nicegui_ws` websocket and `/ui/_nicegui/<version>/...` static/library/component assets) from the cookie middleware — re-verify this prefix if the pinned NiceGUI version changes, since it's not guaranteed stable across major versions
 - No separate REST API: earlier versions exposed a Bearer-token `/api/*` surface for the pre-NiceGUI vanilla-JS frontend; removed after the NiceGUI migration left it with zero consumers (NiceGUI pages talk to `Db`/`SchedulerService` in-process)
-- `/health` is always public (in `_PUBLIC_PATHS`), regardless of `REQUIRE_AUTH`
+- `/health` is always public (in `_PUBLIC_PATHS`)
 - Logging: always stdout (captured by `docker compose logs`); local (non-Docker) runs also get a `RotatingFileHandler` at `data/mailmanager.log` — detected via `Path("/.dockerenv").exists()`; level change via Settings page takes effect immediately
-- `.env` is loaded via `python-dotenv` at the top of `app/main.py` (`--env-file` CLI flag, else nearest `.env`), before `.auth`/other project modules are imported — those modules read `REQUIRE_AUTH`/`TRUSTED_PROXIES` from `os.environ` at import time, so load order matters
+- `.env` is loaded via `python-dotenv` at the top of `app/main.py` (`--env-file` CLI flag, else nearest `.env`), before `.auth`/other project modules are imported — `.auth` reads `TRUSTED_PROXIES` from `os.environ` at import time, so load order matters
 - `TZ` (IANA name, e.g. `Europe/Rome`) drives UI timestamp display via `app/tz.py`; unset/invalid → UTC with a logged warning. It's a boot-time-only setting like `PORT`/`HOST`, not part of the hot-reloadable `UiConfig`
 
 ## UI Guidelines

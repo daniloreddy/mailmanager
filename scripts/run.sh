@@ -9,7 +9,6 @@ fi
 
 source .venv/bin/activate
 
-# Optional: export REQUIRE_AUTH=true
 # Optional: export PORT=8080
 
 exec python -m app.main "$@"

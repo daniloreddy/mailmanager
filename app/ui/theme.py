@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Any
@@ -65,15 +64,10 @@ def _footer(right_content: str = "") -> None:
 
 
 def _logout_action() -> None:
-    if os.environ.get("REQUIRE_AUTH", "false").lower() in (
-        "true",
-        "1",
-        "yes",
-    ):
-        ui.button(
-            icon="logout",
-            on_click=lambda: ui.run_javascript("window.location.href='/auth/logout'"),
-        ).props("flat color=white round").tooltip("Logout")
+    ui.button(
+        icon="logout",
+        on_click=lambda: ui.run_javascript("window.location.href='/auth/logout'"),
+    ).props("flat color=white round").tooltip("Logout")
 
 
 @contextmanager

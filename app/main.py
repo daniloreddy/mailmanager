@@ -26,7 +26,7 @@ def _resolve_env_path() -> Path:
 
 
 # Stage 1 — lightweight parse at import time, before any other env var is read
-# (REQUIRE_AUTH / TRUSTED_PROXIES are read at import time further down / in .auth).
+# (TRUSTED_PROXIES is read at import time in .auth).
 load_dotenv(_resolve_env_path())
 
 import logging  # noqa: E402
@@ -38,6 +38,7 @@ import portalocker  # noqa: E402
 from fastapi import FastAPI, Form, Request, Response  # noqa: E402
 from fastapi.responses import FileResponse, RedirectResponse  # noqa: E402
 
+from .auth import AuthManager  # noqa: E402
 from .db import Db  # noqa: E402
 from .models import LoggingConfig  # noqa: E402
 from .scheduler import SchedulerService  # noqa: E402
@@ -54,12 +55,6 @@ _DATA_DIR = Path(os.environ.get("MAILMANAGER_DATA_DIR", "data"))
 _STATIC_ROOT = Path(__file__).parent.parent / "static"
 _PUBLIC_PATHS = {"/health", "/login", "/auth/login", "/auth/logout"}
 _BYPASS_PREFIXES = ("/ui/_nicegui",)
-
-_require_auth: bool = os.environ.get("REQUIRE_AUTH", "false").lower() in (
-    "true",
-    "1",
-    "yes",
-)
 
 
 def _is_secure(headers: dict) -> bool:
@@ -107,16 +102,12 @@ def _configure_logging(cfg: LoggingConfig) -> None:
         root.addHandler(file_handler)
 
 
-auth = None
-if _require_auth:
-    from .auth import AuthManager
-
-    auth = AuthManager(
-        auth_file=_DATA_DIR / "auth.json",
-        cookie_name="mailmanager_session",
-    )
-    if not auth.has_password():
-        logger.warning("No password set. Run: python scripts/set_password.py")
+auth = AuthManager(
+    auth_file=_DATA_DIR / "auth.json",
+    cookie_name="mailmanager_session",
+)
+if not auth.has_password():
+    logger.warning("No password set. Run: python scripts/set_password.py")
 
 _lock: portalocker.Lock | None = None
 
@@ -147,15 +138,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     nicegui_app.state.scheduler = scheduler
 
     scheduler.start()
-    purge_task: asyncio.Task | None = None
-    if auth is not None:
-        purge_task = asyncio.create_task(auth.purge_loop())
+    purge_task = asyncio.create_task(auth.purge_loop())
 
     yield
 
     await scheduler.stop()
-    if purge_task is not None:
-        purge_task.cancel()
+    purge_task.cancel()
     _lock.release()
 
 
@@ -167,45 +155,42 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
-if auth is not None:
-    # Local binding so mypy narrows `AuthManager | None` to `AuthManager` inside
-    # these closures — narrowing on the module-level `auth` global doesn't persist
-    # into nested function bodies.
-    _auth: AuthManager = auth
+@app.middleware("http")
+async def _auth_gate(request: Request, call_next: Callable) -> Response:
+    path = request.url.path
+    if path in _PUBLIC_PATHS or any(path.startswith(p) for p in _BYPASS_PREFIXES):
+        return await call_next(request)
+    token = request.cookies.get(auth.cookie_name, "")
+    if auth.verify_token(token):
+        return await call_next(request)
+    return RedirectResponse(url="/login", status_code=302)
 
-    @app.middleware("http")
-    async def _auth_gate(request: Request, call_next: Callable) -> Response:
-        path = request.url.path
-        if path in _PUBLIC_PATHS or any(path.startswith(p) for p in _BYPASS_PREFIXES):
-            return await call_next(request)
-        token = request.cookies.get(_auth.cookie_name, "")
-        if _auth.verify_token(token):
-            return await call_next(request)
-        return RedirectResponse(url="/login", status_code=302)
 
-    @app.get("/login")
-    async def login_page() -> FileResponse:
-        return FileResponse(_STATIC_ROOT / "login.html")
+@app.get("/login")
+async def login_page() -> FileResponse:
+    return FileResponse(_STATIC_ROOT / "login.html")
 
-    @app.post("/auth/login")
-    async def auth_login(request: Request, password: str = Form(...)) -> Response:
-        ip = _auth.client_ip(
-            dict(request.headers),
-            request.client.host if request.client else None,
-        )
-        success, _ = _auth.attempt_login(password, ip)
-        if not success:
-            return RedirectResponse(url="/login?error=1", status_code=302)
-        token = _auth.create_token()
-        redirect = RedirectResponse(url="/ui", status_code=302)
-        _auth.set_cookie(redirect, token, _is_secure(dict(request.headers)))
-        return redirect
 
-    @app.get("/auth/logout")
-    async def auth_logout() -> Response:
-        redirect = RedirectResponse(url="/login", status_code=302)
-        _auth.clear_cookie(redirect)
-        return redirect
+@app.post("/auth/login")
+async def auth_login(request: Request, password: str = Form(...)) -> Response:
+    ip = auth.client_ip(
+        dict(request.headers),
+        request.client.host if request.client else None,
+    )
+    success, _ = auth.attempt_login(password, ip)
+    if not success:
+        return RedirectResponse(url="/login?error=1", status_code=302)
+    token = auth.create_token()
+    redirect = RedirectResponse(url="/ui", status_code=302)
+    auth.set_cookie(redirect, token, _is_secure(dict(request.headers)))
+    return redirect
+
+
+@app.get("/auth/logout")
+async def auth_logout() -> Response:
+    redirect = RedirectResponse(url="/login", status_code=302)
+    auth.clear_cookie(redirect)
+    return redirect
 
 
 # Register NiceGUI pages and mount into FastAPI app
