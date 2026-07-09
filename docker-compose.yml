@@ -9,6 +9,9 @@ services:
       - PYTHONUNBUFFERED=1
       - TZ=${TZ:-UTC}
       - PORT=${PORT:-8080}
+      # Container's own 127.0.0.1 is unreachable from the host — always 0.0.0.0
+      # here, unconditionally. External exposure is controlled by BIND_HOST above.
+      - HOST=0.0.0.0
       - NICEGUI_STORAGE_PATH=/app/data/.nicegui
       - ENV_FILE=/app/hostcfg/.env
     volumes:

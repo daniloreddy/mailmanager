@@ -7,7 +7,7 @@ IMAP rule-based email sorter with SpamAssassin integration. Runs as a daemon: Fa
 - **Spam Detection**: Integrated SpamAssassin support via SPAMC protocol.
 - **State Tracking**: IMAP UID tracking to avoid redundant processing.
 - **Web UI**: NiceGUI interface with Status, IMAP, Rules, and Settings tabs (auto-refresh interval configurable).
-- **Auth**: Cookie-based session auth when `REQUIRE_AUTH` is set.
+- **Auth**: Cookie-based session auth when `REQUIRE_AUTH` is set, independent of network binding (`HOST`/`BIND_HOST`).
 - **Docker Ready**: Single container, no external dependencies.
 
 ## Quick Start (Docker)
@@ -22,8 +22,9 @@ mkdir data
 Create `.env` (template: [`.env.example`](.env.example) in the repo):
 
 ```bash
-REQUIRE_AUTH=true        # required for network access: enables auth, binds 0.0.0.0
+REQUIRE_AUTH=true        # recommended whenever reachable beyond localhost — see BIND_HOST below
 # PORT=8080             # HTTP port (default 8080)
+# BIND_HOST=127.0.0.1   # host-side publish address — 0.0.0.0 for LAN/reverse-proxy/direct exposure
 # AUTH_SECURE_COOKIE=1              # force Secure flag on session cookie
 # TRUSTED_PROXIES=127.0.0.1         # IPs trusted for X-Forwarded-For
 # TZ=Europe/Rome                    # timezone for UI timestamps (default UTC)
@@ -38,14 +39,16 @@ services:
     container_name: mailmanager
     restart: unless-stopped
     ports:
-      - "8080:8080"
-    env_file:
-      - .env
+      - "${BIND_HOST:-127.0.0.1}:${PORT:-8080}:${PORT:-8080}"
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=${TZ:-UTC}
+      - PORT=${PORT:-8080}
+      - HOST=0.0.0.0   # container-internal bind, always 0.0.0.0 — see BIND_HOST for external exposure
       - NICEGUI_STORAGE_PATH=/app/data/.nicegui
+      - ENV_FILE=/app/hostcfg/.env
     volumes:
+      - .:/app/hostcfg
       - ./data:/app/data
 ```
 
@@ -76,9 +79,18 @@ Open `http://localhost:8080` — you'll be redirected to the login page; after l
 
 ---
 
-## Without auth (local use only)
+## Auth and network binding are independent
 
-If `REQUIRE_AUTH` is unset the server binds `127.0.0.1` only and requires no login. This works for manual (non-Docker) runs on your machine. **Not usable with Docker**: inside a container `127.0.0.1` is unreachable from the host, so the Docker deployment always requires `REQUIRE_AUTH=true`.
+`REQUIRE_AUTH` and `HOST`/`BIND_HOST` control different things and can be combined freely:
+
+- **`REQUIRE_AUTH`** — whether the dashboard requires a login (cookie session). Set it whenever the app is reachable by anyone other than you, regardless of how it's reached.
+- **`HOST`** (manual/non-Docker runs) / **`BIND_HOST`** (Docker `ports:` publish address) — which interface the server accepts connections on. Default `127.0.0.1` (localhost only); set to `0.0.0.0` to accept connections from other machines.
+
+Examples:
+- Trusted LAN, `HOST=0.0.0.0`, no auth needed if the network itself is trusted.
+- `HOST=127.0.0.1` (default) behind a Cloudflare Tunnel or SSH reverse tunnel exposed to the internet — bind stays local, but `REQUIRE_AUTH=true` is essential since the tunnel makes it internet-reachable.
+
+For manual (non-Docker) runs, `HOST` is read directly from `.env`/the shell environment (default `127.0.0.1`). In Docker, the container's own `127.0.0.1` is unreachable from the host, so `HOST=0.0.0.0` is fixed inside the container (see `docker-compose.yml`) — use `BIND_HOST` to control what's actually reachable from outside the container.
 
 ---
 
@@ -86,7 +98,9 @@ If `REQUIRE_AUTH` is unset the server binds `127.0.0.1` only and requires no log
 
 | Variable | Default | Description |
 |---|---|---|
-| `REQUIRE_AUTH` | _(unset)_ | If `true`: binds `0.0.0.0`, enables login auth |
+| `REQUIRE_AUTH` | _(unset)_ | If `true`: enables cookie login auth on `/ui`. Independent of `HOST`/`BIND_HOST` |
+| `HOST` | `127.0.0.1` | Interface to bind (manual/non-Docker runs only; fixed to `0.0.0.0` inside Docker) |
+| `BIND_HOST` | `127.0.0.1` | Docker only — host-side publish address for the `ports:` mapping |
 | `PORT` | `8080` | HTTP port |
 | `AUTH_SECURE_COOKIE` | _(unset)_ | Set to `1` to force `Secure` flag on the session cookie |
 | `TRUSTED_PROXIES` | `127.0.0.1` | Comma-separated IPs trusted to forward `X-Forwarded-For` |

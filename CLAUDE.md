@@ -14,8 +14,9 @@ python -m venv venv
 ./venv/Scripts/pip install -r requirements.txt -r requirements.dev.txt
 
 # Run
-./venv/Scripts/python main.py          # binds 127.0.0.1:8080 (no auth); loads ./.env if present
-REQUIRE_AUTH=true ./venv/Scripts/python main.py   # binds 0.0.0.0:8080 (auth required)
+./venv/Scripts/python main.py          # binds 127.0.0.1:8080, no auth; loads ./.env if present
+REQUIRE_AUTH=true ./venv/Scripts/python main.py   # auth required; still binds 127.0.0.1 (HOST unset)
+HOST=0.0.0.0 REQUIRE_AUTH=true ./venv/Scripts/python main.py   # auth required, reachable beyond localhost
 PORT=9000 ./venv/Scripts/python main.py        # custom port
 ./venv/Scripts/python main.py --env-file .env.prod  # load a specific .env file
 
@@ -106,8 +107,8 @@ data/
 - Registry: `ghcr.io/daniloreddy/mailmanager`
 - CI/CD: `.github/workflows/docker-publish.yml` (triggers on push to main and tags)
 - Volumes: `/app/data` (SQLite + lock)
-- Env vars: `REQUIRE_AUTH`, `PORT`, `AUTH_SECURE_COOKIE`, `TRUSTED_PROXIES`, `TZ` (see Key invariants)
-- `docker-compose.yml`/`docker-compose-dev.yml` set `TZ=${TZ:-UTC}` (container clock) and `NICEGUI_STORAGE_PATH=/app/data/.nicegui` (persists `app.storage.user`, e.g. dark mode, across container recreation)
+- Env vars: `REQUIRE_AUTH`, `HOST`, `BIND_HOST`, `PORT`, `AUTH_SECURE_COOKIE`, `TRUSTED_PROXIES`, `TZ` (see Key invariants)
+- `docker-compose.yml`/`docker-compose-dev.yml` set `TZ=${TZ:-UTC}` (container clock), `HOST=0.0.0.0` (fixed — container-internal bind, see Key invariants), `PORT=${PORT:-8080}`, and `NICEGUI_STORAGE_PATH=/app/data/.nicegui` (persists `app.storage.user`, e.g. dark mode, across container recreation); `docker-compose.yml` additionally publishes `ports:` at `${BIND_HOST:-127.0.0.1}:${PORT}:${PORT}` — deployer's choice for external reachability, unrelated to the container-internal `HOST`
 
 ## Key invariants
 
@@ -118,7 +119,8 @@ data/
 - `text/html` email bodies are NOT matched by MESSAGE rules (only `text/plain` decoded)
 - STOP action type halts the rule chain but takes no action on the message
 - camelCase JSON keys in SQLite JSON columns (Pydantic field aliases)
-- Auth: if `REQUIRE_AUTH` unset/false → 127.0.0.1 only, no auth; if true → 0.0.0.0, cookie session (AuthManager) gates the whole app; NiceGUI is mounted at `/ui` (`ui.run_with(app, mount_path="/ui", ...)`), so `/ui/*` is the cookie-protected surface while `/login`, `/auth/*`, `/health` stay public FastAPI routes at root. `_BYPASS_PREFIXES` excludes `/ui/_nicegui` (verified at runtime against the installed NiceGUI 3.13.0: covers both `/ui/_nicegui_ws` websocket and `/ui/_nicegui/<version>/...` static/library/component assets) from the cookie middleware — re-verify this prefix if the pinned NiceGUI version changes, since it's not guaranteed stable across major versions
+- Auth and network binding are independent settings, deliberately decoupled: `REQUIRE_AUTH` (unset/false → no login; true → cookie session via AuthManager gates the whole app) does not influence `HOST`. `HOST` (default `127.0.0.1`, non-Docker runs only — read directly via `os.environ`, see `main.py`) is a pure deployer choice: e.g. `HOST=0.0.0.0` with no auth on a trusted LAN, or `HOST=127.0.0.1` (default) with `REQUIRE_AUTH=true` behind a Cloudflare/SSH tunnel exposed to the internet. In Docker, `HOST=0.0.0.0` is fixed unconditionally inside the container (container's own `127.0.0.1` is unreachable from the host — Docker-networking necessity, not a deployer choice); external reachability there is controlled separately by `BIND_HOST` on the Compose `ports:` mapping. If this invariant ever regresses (`HOST` re-coupled to `REQUIRE_AUTH`), it's a bug — see `uvicorn.md` §2 in global guidelines: "HOST is a deployer choice, not an application concern"
+- NiceGUI is mounted at `/ui` (`ui.run_with(app, mount_path="/ui", ...)`), so `/ui/*` is the cookie-protected surface while `/login`, `/auth/*`, `/health` stay public FastAPI routes at root. `_BYPASS_PREFIXES` excludes `/ui/_nicegui` (verified at runtime against the installed NiceGUI 3.13.0: covers both `/ui/_nicegui_ws` websocket and `/ui/_nicegui/<version>/...` static/library/component assets) from the cookie middleware — re-verify this prefix if the pinned NiceGUI version changes, since it's not guaranteed stable across major versions
 - No separate REST API: earlier versions exposed a Bearer-token `/api/*` surface for the pre-NiceGUI vanilla-JS frontend; removed after the NiceGUI migration left it with zero consumers (NiceGUI pages talk to `Db`/`SchedulerService` in-process)
 - `/health` is always public (in `_PUBLIC_PATHS`), regardless of `REQUIRE_AUTH`
 - Logging: always stdout (captured by `docker compose logs`); local (non-Docker) runs also get a `RotatingFileHandler` at `data/mailmanager.log` — detected via `Path("/.dockerenv").exists()`; level change via Settings page takes effect immediately
