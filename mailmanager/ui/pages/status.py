@@ -6,12 +6,15 @@ from nicegui import ui
 
 from ..components import metric_card
 from ..theme import base_layout
+from ...tz import get_timezone
+
+_TZ = get_timezone()
 
 
 def _fmt(epoch: Optional[float]) -> str:
     if not epoch:
         return "—"
-    return datetime.fromtimestamp(epoch).strftime("%m/%d/%Y %H:%M:%S")
+    return datetime.fromtimestamp(epoch, tz=_TZ).strftime("%m/%d/%Y %H:%M:%S")
 
 
 @ui.page("/")
@@ -64,7 +67,7 @@ async def status_page() -> None:
                 interval = ui_cfg.autoRefreshSeconds
 
                 def _update_lbl() -> None:
-                    now = datetime.now().strftime("%H:%M:%S")
+                    now = datetime.now(_TZ).strftime("%H:%M:%S")
                     refresh_lbl.set_text(
                         f"Aggiornato: {now} · auto-refresh {interval}s"
                     )

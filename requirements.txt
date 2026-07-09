@@ -6,3 +6,5 @@ portalocker>=2.8.2
 nicegui>=1.4.0
 pyjwt>=2.8.0
 python-multipart>=0.0.9
+python-dotenv>=1.0.0
+tzdata>=2024.1

@@ -5,9 +5,12 @@ services:
     restart: "no"
     ports:
       - "${PORT:-8080}:${PORT:-8080}"
-    env_file:
-      - .env
     environment:
       - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-UTC}
+      - PORT=${PORT:-8080}
+      - NICEGUI_STORAGE_PATH=/app/data/.nicegui
+      - ENV_FILE=/app/hostcfg/.env
     volumes:
+      - .:/app/hostcfg
       - ./data:/app/data

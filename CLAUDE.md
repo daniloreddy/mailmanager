@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-IMAP rule-based email sorter with SpamAssassin integration. Runs as a long-lived daemon: FastAPI server + NiceGUI web UI + background scheduler. UI served by NiceGUI mounted into FastAPI via `ui.run_with()`.
+IMAP rule-based email sorter with SpamAssassin integration. Runs as a long-lived daemon: FastAPI server + NiceGUI web UI + background scheduler. UI served by NiceGUI mounted into FastAPI via `ui.run_with(app, mount_path="/ui", ...)` — the whole dashboard lives under `/ui`; `/login`, `/auth/*`, `/health` stay FastAPI routes at root.
 
 ## Commands
 
@@ -14,9 +14,10 @@ python -m venv venv
 ./venv/Scripts/pip install -r requirements.txt -r requirements.dev.txt
 
 # Run
-./venv/Scripts/python main.py          # binds 127.0.0.1:8080 (no auth)
+./venv/Scripts/python main.py          # binds 127.0.0.1:8080 (no auth); loads ./.env if present
 REQUIRE_AUTH=true ./venv/Scripts/python main.py   # binds 0.0.0.0:8080 (auth required)
 PORT=9000 ./venv/Scripts/python main.py        # custom port
+./venv/Scripts/python main.py --env-file .env.prod  # load a specific .env file
 
 # Lint + type check + tests
 scripts/checks.bat                     # Windows (ruff check/format + mypy + pytest)
@@ -31,12 +32,13 @@ scripts/checks.sh                      # Unix
 ## Architecture
 
 ```
-main.py                  Entry: portalocker lock → configure_logging → uvicorn.run (workers=1)
+main.py                  Entry: --env-file/.env (python-dotenv) → portalocker lock → configure_logging → uvicorn.run (workers=1)
 app/
   auth.py                AuthManager: cookie-based session auth (scrypt + JWT), brute-force protection
 mailmanager/
   models.py              Pydantic v2: Rule, ImapConfig, SpamAssassinConfig, SchedulerConfig,
                          LoggingConfig, UiConfig (autoRefreshEnabled, autoRefreshSeconds), State + Enums
+  tz.py                  get_timezone(): resolves TZ env var via zoneinfo, falls back to UTC + logs warning
   db.py                  Db: SQLite CRUD, WAL mode, auto-migrates legacy JSON on first run
   processing.py          ProcessingService: IMAP fetch → spam check → rule eval → action (sync)
   spamassassin.py        SpamAssassinClient: raw SPAMC/1.5 socket protocol
@@ -44,6 +46,7 @@ mailmanager/
   server.py              FastAPI app factory: lifespan (start/stop scheduler), cookie auth middleware,
                          NiceGUI mount via ui.run_with(). No separate REST API — NiceGUI pages read/write
                          Db and SchedulerService directly in-process via nicegui.app.state
+                         GET /health — public, unauthenticated liveness check
   ui/
     theme.py             _page_setup() / _header() / _footer() / base_layout() context manager:
                          icon-nav header (bg-primary), dark/light toggle, no sidebar
@@ -64,6 +67,7 @@ data/
   auth.json              Password hash + JWT secret (auto-created; gitignored)
   storage_secret         NiceGUI storage_secret, stable across restarts (auto-created; gitignored)
   mailmanager.lock       portalocker single-instance guard
+  mailmanager.log        RotatingFileHandler output, non-Docker runs only (5MB x 3 backups)
 ```
 
 ### Processing flow (ProcessingService.process_account)
@@ -102,7 +106,8 @@ data/
 - Registry: `ghcr.io/daniloreddy/mailmanager`
 - CI/CD: `.github/workflows/docker-publish.yml` (triggers on push to main and tags)
 - Volumes: `/app/data` (SQLite + lock)
-- Env vars: `REQUIRE_AUTH`, `PORT`, `AUTH_SECURE_COOKIE`, `TRUSTED_PROXIES` (see Key invariants)
+- Env vars: `REQUIRE_AUTH`, `PORT`, `AUTH_SECURE_COOKIE`, `TRUSTED_PROXIES`, `TZ` (see Key invariants)
+- `docker-compose.yml`/`docker-compose-dev.yml` set `TZ=${TZ:-UTC}` (container clock) and `NICEGUI_STORAGE_PATH=/app/data/.nicegui` (persists `app.storage.user`, e.g. dark mode, across container recreation)
 
 ## Key invariants
 
@@ -113,9 +118,12 @@ data/
 - `text/html` email bodies are NOT matched by MESSAGE rules (only `text/plain` decoded)
 - STOP action type halts the rule chain but takes no action on the message
 - camelCase JSON keys in SQLite JSON columns (Pydantic field aliases)
-- Auth: if `REQUIRE_AUTH` unset/false → 127.0.0.1 only, no auth; if true → 0.0.0.0, cookie session (AuthManager) gates the whole app; `_BYPASS_PREFIXES` excludes only `/_nicegui/` (websocket/assets) from the cookie middleware
+- Auth: if `REQUIRE_AUTH` unset/false → 127.0.0.1 only, no auth; if true → 0.0.0.0, cookie session (AuthManager) gates the whole app; NiceGUI is mounted at `/ui` (`ui.run_with(app, mount_path="/ui", ...)`), so `/ui/*` is the cookie-protected surface while `/login`, `/auth/*`, `/health` stay public FastAPI routes at root. `_BYPASS_PREFIXES` excludes `/ui/_nicegui` (verified at runtime against the installed NiceGUI 3.13.0: covers both `/ui/_nicegui_ws` websocket and `/ui/_nicegui/<version>/...` static/library/component assets) from the cookie middleware — re-verify this prefix if the pinned NiceGUI version changes, since it's not guaranteed stable across major versions
 - No separate REST API: earlier versions exposed a Bearer-token `/api/*` surface for the pre-NiceGUI vanilla-JS frontend; removed after the NiceGUI migration left it with zero consumers (NiceGUI pages talk to `Db`/`SchedulerService` in-process)
-- Logging: stdout only (captured by `docker compose logs`); level change via Settings page takes effect immediately
+- `/health` is always public (in `_PUBLIC_PATHS`), regardless of `REQUIRE_AUTH`
+- Logging: always stdout (captured by `docker compose logs`); local (non-Docker) runs also get a `RotatingFileHandler` at `data/mailmanager.log` — detected via `Path("/.dockerenv").exists()`; level change via Settings page takes effect immediately
+- `.env` is loaded via `python-dotenv` at the top of `main.py` (`--env-file` CLI flag, else nearest `.env`), before `mailmanager.server`/`app.auth` are imported — those modules read `REQUIRE_AUTH`/`TRUSTED_PROXIES` from `os.environ` at import time, so load order matters
+- `TZ` (IANA name, e.g. `Europe/Rome`) drives UI timestamp display via `mailmanager/tz.py`; unset/invalid → UTC with a logged warning. It's a boot-time-only setting like `PORT`/`HOST`, not part of the hot-reloadable `UiConfig`
 
 ## UI Guidelines
 

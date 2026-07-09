@@ -26,6 +26,7 @@ REQUIRE_AUTH=true        # required for network access: enables auth, binds 0.0.
 # PORT=8080             # HTTP port (default 8080)
 # AUTH_SECURE_COOKIE=1              # force Secure flag on session cookie
 # TRUSTED_PROXIES=127.0.0.1         # IPs trusted for X-Forwarded-For
+# TZ=Europe/Rome                    # timezone for UI timestamps (default UTC)
 ```
 
 Create `docker-compose.yml`:
@@ -42,6 +43,8 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-UTC}
+      - NICEGUI_STORAGE_PATH=/app/data/.nicegui
     volumes:
       - ./data:/app/data
 ```
@@ -69,7 +72,7 @@ docker exec -it mailmanager python scripts/set_password.py
 docker compose up -d
 ```
 
-Open `http://localhost:8080` — log in with the password you set.
+Open `http://localhost:8080` — you'll be redirected to the login page; after logging in with the password you set, you land on the dashboard at `/ui`.
 
 ---
 
@@ -87,6 +90,7 @@ If `REQUIRE_AUTH` is unset the server binds `127.0.0.1` only and requires no log
 | `PORT` | `8080` | HTTP port |
 | `AUTH_SECURE_COOKIE` | _(unset)_ | Set to `1` to force `Secure` flag on the session cookie |
 | `TRUSTED_PROXIES` | `127.0.0.1` | Comma-separated IPs trusted to forward `X-Forwarded-For` |
+| `TZ` | `UTC` | IANA timezone (e.g. `Europe/Rome`) used to display timestamps in the UI |
 
 ---
 

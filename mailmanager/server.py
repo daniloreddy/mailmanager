@@ -21,8 +21,8 @@ _require_auth: bool = os.environ.get("REQUIRE_AUTH", "false").lower() in (
 )
 
 _STATIC_ROOT = Path(__file__).parent.parent / "static"
-_PUBLIC_PATHS = {"/login", "/auth/login", "/auth/logout"}
-_BYPASS_PREFIXES = ("/_nicegui/",)
+_PUBLIC_PATHS = {"/health", "/login", "/auth/login", "/auth/logout"}
+_BYPASS_PREFIXES = ("/ui/_nicegui",)
 
 
 def _is_secure(headers: dict) -> bool:
@@ -77,6 +77,10 @@ def create_app(db: Db, scheduler: SchedulerService) -> FastAPI:
     nicegui_app.state.db = db
     nicegui_app.state.scheduler = scheduler
 
+    @app.get("/health")
+    async def health() -> dict:
+        return {"status": "ok"}
+
     if auth is not None:
 
         @app.middleware("http")
@@ -105,7 +109,7 @@ def create_app(db: Db, scheduler: SchedulerService) -> FastAPI:
             if not success:
                 return RedirectResponse(url="/login?error=1", status_code=302)
             token = auth.create_token()
-            redirect = RedirectResponse(url="/", status_code=302)
+            redirect = RedirectResponse(url="/ui", status_code=302)
             auth.set_cookie(redirect, token, _is_secure(dict(request.headers)))
             return redirect
 
@@ -119,6 +123,8 @@ def create_app(db: Db, scheduler: SchedulerService) -> FastAPI:
     from nicegui import ui
     from .ui import pages  # noqa: F401 — triggers @ui.page registrations
 
-    ui.run_with(app, storage_secret=_load_storage_secret(Path("data")))
+    ui.run_with(
+        app, mount_path="/ui", storage_secret=_load_storage_secret(Path("data"))
+    )
 
     return app
