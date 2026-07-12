@@ -57,6 +57,8 @@ app/
                          idle — no route uses @limiter.limit, kept available for future use, not a
                          reintroduction of a REST API.
                          GET /health — public, unauthenticated liveness check.
+                         GET / — redirects to /ui/ (auth-gated like any other non-public path,
+                         so unauthenticated visitors land on /login first).
                          `if __name__ == "__main__":` block: argparse --host/--port/--dev/--env-file,
                          then `uvicorn.run("app.main:app", ..., workers=1)` (import-string, so
                          --dev/reload works)
