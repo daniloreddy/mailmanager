@@ -1,47 +1,34 @@
-import argparse
-import asyncio
-import os
-import secrets
-import sys
-from collections.abc import AsyncGenerator, Callable
-from contextlib import asynccontextmanager
-from pathlib import Path
+from dotenv import load_dotenv
+from redberry_webkit.env_resolver import resolve_env_path
 
-from dotenv import find_dotenv, load_dotenv
+_env_path = resolve_env_path()
+load_dotenv(_env_path)
 
-
-def _resolve_env_path() -> Path:
-    # Precedence: ENV_FILE (Docker bind-mount) > --env-file CLI flag (local dev)
-    # > nearest .env found from cwd.
-    env_file_var = os.environ.get("ENV_FILE")
-    if env_file_var:
-        return Path(env_file_var)
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--env-file", type=str, default=None)
-    args, _ = parser.parse_known_args()
-    if args.env_file:
-        return Path(args.env_file)
-    found = find_dotenv(usecwd=True)
-    return Path(found) if found else Path(".env")
-
-
-# Stage 1 — lightweight parse at import time, before any other env var is read
-# (TRUSTED_PROXIES is read at import time in .auth).
-load_dotenv(_resolve_env_path())
-
+import argparse  # noqa: E402
+import asyncio  # noqa: E402
 import logging  # noqa: E402
+import os  # noqa: E402
+import sys  # noqa: E402
+from collections.abc import AsyncGenerator, Callable  # noqa: E402
+from contextlib import asynccontextmanager  # noqa: E402
 from logging.handlers import RotatingFileHandler  # noqa: E402
-
-logging.basicConfig(level=logging.INFO)  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 import portalocker  # noqa: E402
-from fastapi import FastAPI, Form, Request, Response  # noqa: E402
-from fastapi.responses import FileResponse, RedirectResponse  # noqa: E402
+from fastapi import FastAPI, Request, Response  # noqa: E402
+from fastapi.responses import RedirectResponse  # noqa: E402
+from redberry_webkit.auth import client_ip, purge_loop  # noqa: E402
+from redberry_webkit.logging_utils import CredentialFilter  # noqa: E402
+from slowapi import Limiter, _rate_limit_exceeded_handler  # noqa: E402
+from slowapi.errors import RateLimitExceeded  # noqa: E402
+from slowapi.middleware import SlowAPIMiddleware  # noqa: E402
 
-from .auth import AuthManager  # noqa: E402
-from .db import Db  # noqa: E402
-from .models import LoggingConfig  # noqa: E402
+from .config import config  # noqa: E402
+from .db import Db, migrate_legacy_config_to_env  # noqa: E402
+from .metrics import metrics  # noqa: E402
 from .scheduler import SchedulerService  # noqa: E402
+from .ui.router import TRUSTED_PROXIES, auth  # noqa: E402
+from .ui.router import router as ui_router  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -52,64 +39,53 @@ _IS_DOCKER = Path("/.dockerenv").exists()
 # (uvicorn.md §6: never point a test at the project's real data/ directory).
 _DATA_DIR = Path(os.environ.get("MAILMANAGER_DATA_DIR", "data"))
 
-_STATIC_ROOT = Path(__file__).parent.parent / "static"
 _PUBLIC_PATHS = {"/health", "/login", "/auth/login", "/auth/logout"}
 _BYPASS_PREFIXES = ("/ui/_nicegui",)
 
+DEV = os.environ.get("DEV", "false").lower() in ("true", "1", "yes")
+CONFIG_RELOAD_INTERVAL_S = 5
 
-def _is_secure(headers: dict) -> bool:
-    if os.environ.get("AUTH_SECURE_COOKIE") == "1":
-        return True
-    return headers.get("x-forwarded-proto") == "https"
-
-
-def _load_storage_secret(data_dir: Path) -> str:
-    # Stable across restarts so app.storage.user (e.g. dark mode) persists.
-    secret_file = data_dir / "storage_secret"
-    if secret_file.exists():
-        secret = secret_file.read_text(encoding="utf-8").strip()
-        if secret:
-            return secret
-    secret = secrets.token_hex(32)
-    data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    secret_file.write_text(secret, encoding="utf-8")
-    return secret
-
-
-def _configure_logging(cfg: LoggingConfig) -> None:
-    root = logging.getLogger()
-    root.setLevel(cfg.level.value)
-    root.handlers.clear()
-
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(formatter)
-    root.addHandler(handler)
-
-    if not _IS_DOCKER:
-        # Docker logs are captured via `docker compose logs`; local runs get a
-        # rotating file too so a closed terminal doesn't lose the daemon's history.
-        log_dir = _DATA_DIR
-        log_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        file_handler = RotatingFileHandler(
-            log_dir / "mailmanager.log",
-            maxBytes=5 * 1024 * 1024,
-            backupCount=3,
-            encoding="utf-8",
-        )
-        file_handler.setFormatter(formatter)
-        root.addHandler(file_handler)
-
-
-auth = AuthManager(
-    auth_file=_DATA_DIR / "auth.json",
-    cookie_name="mailmanager_session",
+_stream_handler = logging.StreamHandler(sys.stdout)
+_credential_filter = CredentialFilter()
+_stream_handler.addFilter(_credential_filter)
+_stream_handler.setFormatter(
+    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
-if not auth.has_password():
-    logger.warning("No password set. Run: python scripts/set_password.py")
+
+_handlers: list[logging.Handler] = [_stream_handler]
+
+if not _IS_DOCKER:
+    # Docker logs are captured via `docker compose logs`; local runs get a rotating
+    # file too so a closed terminal doesn't lose the daemon's history.
+    _DATA_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _file_handler = RotatingFileHandler(
+        _DATA_DIR / "mailmanager.log", maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    _file_handler.addFilter(_credential_filter)
+    _file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
+    _handlers.append(_file_handler)
+
+logging.basicConfig(level=config.get("LOG_LEVEL", "INFO"), handlers=_handlers, force=True)
+logger.info("Using .env=%s", _env_path)
+
+
+def _rate_limit_key(request: Request) -> str:
+    host = request.client.host if request.client else "unknown"
+    return client_ip(request.headers, host, TRUSTED_PROXIES)
+
+
+limiter = Limiter(key_func=_rate_limit_key)
 
 _lock: portalocker.Lock | None = None
+
+
+async def _config_reload_loop(interval_s: int) -> None:
+    while True:
+        await asyncio.sleep(interval_s)
+        if config.reload_if_stale():
+            logging.getLogger().setLevel(config.get("LOG_LEVEL", "INFO"))
 
 
 @asynccontextmanager
@@ -126,28 +102,44 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         raise
 
     db = Db(str(_DATA_DIR))
-    _configure_logging(db.load_logging_config())
+    migrate_legacy_config_to_env(_DATA_DIR, config)
+
+    await metrics.init_db()
 
     scheduler = SchedulerService(db)
 
     # NiceGUI page handlers receive request.app = nicegui's core.app (not this app),
-    # so we attach db/scheduler to nicegui's app.state for page handler access.
+    # so we attach db/scheduler/metrics to nicegui's app.state for page handler access.
     from nicegui import app as nicegui_app
 
     nicegui_app.state.db = db
     nicegui_app.state.scheduler = scheduler
+    nicegui_app.state.metrics = metrics
 
     scheduler.start()
-    purge_task = asyncio.create_task(auth.purge_loop())
+    purge_task = asyncio.create_task(purge_loop(auth))
+    config_task = asyncio.create_task(_config_reload_loop(CONFIG_RELOAD_INTERVAL_S))
 
     yield
 
     await scheduler.stop()
     purge_task.cancel()
+    config_task.cancel()
     _lock.release()
 
 
-app = FastAPI(title="MailManager", lifespan=lifespan)
+app = FastAPI(
+    title="MailManager",
+    lifespan=lifespan,
+    docs_url="/docs" if DEV else None,
+    redoc_url="/redoc" if DEV else None,
+    openapi_url="/openapi.json" if DEV else None,
+)
+app.state.limiter = limiter
+# slowapi lacks precise stubs for this handler signature, hence the ignore below.
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+app.add_middleware(SlowAPIMiddleware)
+app.include_router(ui_router)
 
 
 @app.get("/health")
@@ -166,51 +158,23 @@ async def _auth_gate(request: Request, call_next: Callable) -> Response:
     return RedirectResponse(url="/login", status_code=302)
 
 
-@app.get("/login")
-async def login_page() -> FileResponse:
-    return FileResponse(_STATIC_ROOT / "login.html")
-
-
-@app.post("/auth/login")
-async def auth_login(request: Request, password: str = Form(...)) -> Response:
-    ip = auth.client_ip(
-        dict(request.headers),
-        request.client.host if request.client else None,
-    )
-    success, _ = auth.attempt_login(password, ip)
-    if not success:
-        return RedirectResponse(url="/login?error=1", status_code=302)
-    token = auth.create_token()
-    redirect = RedirectResponse(url="/ui", status_code=302)
-    auth.set_cookie(redirect, token, _is_secure(dict(request.headers)))
-    return redirect
-
-
-@app.get("/auth/logout")
-async def auth_logout() -> Response:
-    redirect = RedirectResponse(url="/login", status_code=302)
-    auth.clear_cookie(redirect)
-    return redirect
-
-
 # Register NiceGUI pages and mount into FastAPI app
 from nicegui import ui  # noqa: E402
 
 from .ui import pages as _ui_pages  # noqa: E402,F401 — triggers @ui.page registrations
 
-ui.run_with(app, mount_path="/ui", storage_secret=_load_storage_secret(_DATA_DIR))
+ui.run_with(app, mount_path="/ui", storage_secret=auth.ui_storage_secret)
 
 
 if __name__ == "__main__":
     default_port = int(os.environ.get("PORT", "8080"))
     default_host = os.environ.get("HOST", "127.0.0.1")
-    default_dev = os.environ.get("DEV", "false").lower() in ("true", "1", "yes")
 
     parser = argparse.ArgumentParser(description="MailManager server")
     parser.add_argument("--port", type=int, default=default_port)
     parser.add_argument("--host", type=str, default=default_host)
-    parser.add_argument("--dev", action="store_true", default=default_dev)
-    # Already consumed by _resolve_env_path() above; kept here so --help/argparse
+    parser.add_argument("--dev", action=argparse.BooleanOptionalAction, default=DEV)
+    # Already consumed by resolve_env_path() above; kept here so --help/argparse
     # doesn't reject it when passed on the command line.
     parser.add_argument("--env-file", type=str, default=None)
     args = parser.parse_args()
@@ -223,6 +187,12 @@ if __name__ == "__main__":
         host=args.host,
         port=args.port,
         reload=args.dev,
+        reload_dirs=[
+            str(Path(__file__).resolve().parent),
+            str(Path(__file__).resolve().parent.parent / "static"),
+        ]
+        if args.dev
+        else None,
         workers=1,  # mandatory: in-process scheduler + portalocker lock aren't
         # shared across worker processes — see CLAUDE.md Key invariants.
     )

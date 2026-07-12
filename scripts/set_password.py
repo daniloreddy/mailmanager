@@ -14,7 +14,7 @@ def _bootstrap() -> None:
     # If deps are already importable (e.g. inside Docker), skip venv entirely.
     sys.path.insert(0, str(_ROOT))
     try:
-        import app.auth  # noqa: F401
+        import redberry_webkit.auth  # noqa: F401
 
         return
     except ImportError:
@@ -34,14 +34,10 @@ import getpass  # noqa: E402
 
 sys.path.insert(0, str(_ROOT))
 
-from app.auth import AuthManager  # noqa: E402
+from app.ui.router import auth  # noqa: E402
 
 
 def main() -> None:
-    auth = AuthManager(
-        auth_file=Path("data/auth.json"),
-        cookie_name="mailmanager_session",
-    )
     password = getpass.getpass("New password: ")
     confirm = getpass.getpass("Confirm password: ")
     if not password:
@@ -51,7 +47,7 @@ def main() -> None:
         print("Passwords do not match.")
         sys.exit(1)
     auth.set_password(password)
-    print("Password set successfully.")
+    print(f"Password set successfully. File: {auth.auth_file}")
 
 
 if __name__ == "__main__":

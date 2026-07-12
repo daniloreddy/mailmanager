@@ -99,24 +99,6 @@ class LoggingLevel(str, Enum):
     ERROR = "ERROR"
 
 
-class LoggingConfig(BaseModel):
-    level: LoggingLevel = LoggingLevel.INFO
-
-
-class SchedulerConfig(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    enabled: bool = True
-    interval_seconds: int = 300
-
-
-class UiConfig(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-    auto_refresh_enabled: bool = True
-    auto_refresh_seconds: int = 30
-
-
 class State(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 

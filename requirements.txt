@@ -1,10 +1,11 @@
-pydantic>=2.0.0
-imapclient>=3.0.0
-fastapi>=0.110.0
-uvicorn[standard]>=0.29.0
-portalocker>=2.8.2
-nicegui>=1.4.0
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+nicegui>=3.13.0
+python-dotenv>=1.0.1
+pydantic>=2.8.0
 pyjwt>=2.8.0
 python-multipart>=0.0.9
-python-dotenv>=1.0.0
-tzdata>=2024.1
+slowapi>=0.1.9
+imapclient>=3.0.0
+portalocker>=2.8.2
+redberry-webkit @ git+https://github.com/daniloreddy/redberry-webkit.git@v0.1.4

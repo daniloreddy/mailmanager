@@ -1,13 +1,15 @@
+import os
 from datetime import datetime
 
 from nicegui import app as nicegui_app
 from nicegui import ui
+from redberry_webkit.timezone_utils import resolve_timezone
 
-from ...tz import get_timezone
+from ...config import config
 from ..components import metric_card
 from ..theme import base_layout
 
-_TZ = get_timezone()
+_TZ = resolve_timezone(os.environ.get("TZ", "UTC"))
 
 
 def _fmt(epoch: float | None) -> str:
@@ -19,6 +21,7 @@ def _fmt(epoch: float | None) -> str:
 @ui.page("/")
 async def status_page() -> None:
     scheduler = nicegui_app.state.scheduler
+    metrics = nicegui_app.state.metrics
 
     @ui.refreshable
     def content() -> None:
@@ -49,19 +52,63 @@ async def status_page() -> None:
             "color=primary" + (" disabled" if s.is_running else "")
         )
 
-    ui_cfg = nicegui_app.state.db.load_ui_config()
+    @ui.refreshable
+    async def history_table() -> None:
+        history = await metrics.get_history(limit=50)
+
+        with ui.card().classes("full-width q-mt-md"):
+            ui.label("Storico run").classes("text-h6 q-mb-sm")
+            if not history:
+                ui.label("Nessun run ancora eseguito").classes("text-grey-6")
+                return
+            rows = [
+                {
+                    "id": str(index),
+                    "timestamp": _fmt(record.timestamp),
+                    "account": (record.extra or {}).get("account", "—"),
+                    "status": record.status,
+                    "duration_s": f"{record.duration_s:.2f}",
+                    "error_message": record.error_message or "",
+                }
+                for index, record in enumerate(history)
+            ]
+            tbl = ui.table(
+                columns=[
+                    {"name": "timestamp", "label": "Quando", "field": "timestamp"},
+                    {"name": "account", "label": "Account", "field": "account"},
+                    {"name": "status", "label": "Status", "field": "status"},
+                    {"name": "duration_s", "label": "Durata (s)", "field": "duration_s"},
+                    {"name": "error_message", "label": "Errore", "field": "error_message"},
+                ],
+                rows=rows,
+                row_key="id",
+            ).classes("full-width")
+            tbl.add_slot(
+                "body-cell-status",
+                """
+                <q-td :props="props">
+                  <q-badge
+                    :color="props.value === 'ok' ? 'positive' : 'negative'"
+                    :label="props.value"
+                  />
+                </q-td>
+                """,
+            )
 
     with base_layout("Status"):
         with ui.column().classes("full-width").style("padding:1.25rem;"):
             content()
+            await history_table()
             refresh_lbl = (
                 ui.label("")
                 .classes("text-caption text-grey-6")
                 .style("text-align:right; width:100%")
             )
 
-            if ui_cfg.auto_refresh_enabled and ui_cfg.auto_refresh_seconds > 0:
-                interval = ui_cfg.auto_refresh_seconds
+            refresh_enabled = config.get_bool("REFRESH_ENABLED")
+            interval = config.get_int("REFRESH_INTERVAL", 30)
+
+            if refresh_enabled and interval > 0:
 
                 def _update_lbl() -> None:
                     now = datetime.now(_TZ).strftime("%H:%M:%S")
@@ -69,6 +116,7 @@ async def status_page() -> None:
 
                 def _refresh() -> None:
                     content.refresh()
+                    history_table.refresh()
                     _update_lbl()
 
                 _update_lbl()

@@ -3,7 +3,10 @@ import logging
 import time
 from dataclasses import dataclass
 
+from .config import config
 from .db import Db
+from .metrics import MetricsRecord, metrics
+from .models import SpamAssassinConfig
 from .processing import ProcessingService
 
 logger = logging.getLogger(__name__)
@@ -46,16 +49,16 @@ class SchedulerService:
 
     async def _loop(self) -> None:
         while not self._stop_event.is_set():
-            cfg = self._db.load_scheduler_config()
-            if cfg.enabled:
+            if config.get_bool("SCHEDULER_ENABLED"):
                 await self._do_run()
 
-            self._status.next_run_at = time.time() + cfg.interval_seconds
+            interval_seconds = config.get_int("SCHEDULER_INTERVAL_SECONDS", 300)
+            self._status.next_run_at = time.time() + interval_seconds
 
             try:
                 await asyncio.wait_for(
                     self._run_now_event.wait(),
-                    timeout=cfg.interval_seconds,
+                    timeout=interval_seconds,
                 )
                 self._run_now_event.clear()
             except TimeoutError:
@@ -69,7 +72,12 @@ class SchedulerService:
         self._status.last_error = None
         loop = asyncio.get_running_loop()
         try:
-            await loop.run_in_executor(None, self._run_sync)
+            records = await loop.run_in_executor(None, self._run_sync)
+            for record in records:
+                await metrics.record(record)
+                if record.status == "error":
+                    self._status.last_error = record.error_message
+            await metrics.purge_old(days=30)
         except Exception as e:
             self._status.last_error = str(e)
             logger.error(f"Scheduler run failed: {e}")
@@ -77,13 +85,43 @@ class SchedulerService:
             self._status.is_running = False
             self._status.run_count += 1
 
-    def _run_sync(self) -> None:
-        spam_config = self._db.load_spam_config()
+    def _run_sync(self) -> list[MetricsRecord]:
+        spam_config = SpamAssassinConfig(
+            enabled=config.get_bool("SPAM_ENABLED"),
+            host=config.get("SPAM_HOST", "127.0.0.1"),
+            port=config.get_int("SPAM_PORT", 783),
+            user=config.get("SPAM_USER") or None,
+            connect_timeout_millis=config.get_int("SPAM_CONNECT_TIMEOUT_MS", 3000),
+            read_timeout_millis=config.get_int("SPAM_READ_TIMEOUT_MS", 5000),
+        )
         imaps = self._db.load_imaps()
         rules = self._db.load_rules()
         if not imaps:
             logger.info("No IMAP configurations found, skipping run.")
-            return
+            return []
+
         service = ProcessingService(self._db, rules, spam_config)
+        records: list[MetricsRecord] = []
         for imap in imaps:
-            service.process_account(imap)
+            start = time.monotonic()
+            error: str | None = None
+            try:
+                service.process_account(imap)
+            except Exception as exc:
+                # process_account already catches and logs IMAP/connection errors
+                # internally (fail-open) — this only fires for a truly unexpected bug,
+                # so most failed accounts still surface here as "ok" with no error
+                # detail. Good enough for run-count/duration history without touching
+                # processing.py's own error handling.
+                error = str(exc)
+                logger.error(f"Unexpected error processing account {imap.name}: {exc}")
+            records.append(
+                MetricsRecord(
+                    timestamp=time.time(),
+                    status="error" if error else "ok",
+                    duration_s=time.monotonic() - start,
+                    error_message=error,
+                    extra={"account": imap.name},
+                )
+            )
+        return records

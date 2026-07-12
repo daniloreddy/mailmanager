@@ -3,15 +3,9 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from .models import (
-    ImapConfig,
-    LoggingConfig,
-    Rule,
-    SchedulerConfig,
-    SpamAssassinConfig,
-    State,
-    UiConfig,
-)
+from redberry_webkit.config import ConfigManager
+
+from .models import ImapConfig, Rule, State
 
 logger = logging.getLogger(__name__)
 
@@ -37,24 +31,8 @@ class Db:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 data TEXT
             )""")
-            c.execute("""CREATE TABLE IF NOT EXISTS spam_config (
-                id INTEGER PRIMARY KEY,
-                data TEXT
-            )""")
             c.execute("""CREATE TABLE IF NOT EXISTS states (
                 key TEXT PRIMARY KEY,
-                data TEXT
-            )""")
-            c.execute("""CREATE TABLE IF NOT EXISTS scheduler_config (
-                id INTEGER PRIMARY KEY,
-                data TEXT
-            )""")
-            c.execute("""CREATE TABLE IF NOT EXISTS logging_config (
-                id INTEGER PRIMARY KEY,
-                data TEXT
-            )""")
-            c.execute("""CREATE TABLE IF NOT EXISTS ui_config (
-                id INTEGER PRIMARY KEY,
                 data TEXT
             )""")
 
@@ -62,7 +40,6 @@ class Db:
         old_files = {
             "imap-servers.json": lambda items: self.save_imaps([ImapConfig(**i) for i in items]),
             "rules.json": lambda items: [self.save_rule(Rule(**i)) for i in items],
-            "spam-assassin.json": lambda data: self.save_spam_config(SpamAssassinConfig(**data)),
             "processing-state.json": lambda data: self.save_states(
                 {k: State(**v) for k, v in data.items()}
             ),
@@ -78,23 +55,6 @@ class Db:
                     filepath.unlink()
                 except Exception as e:
                     logger.error(f"Migration error for {filename}: {e}")
-
-    def load_spam_config(self) -> SpamAssassinConfig:
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute("SELECT data FROM spam_config WHERE id=1")
-            row = c.fetchone()
-        if row:
-            return SpamAssassinConfig(**json.loads(row[0]))
-        return SpamAssassinConfig()
-
-    def save_spam_config(self, config: SpamAssassinConfig) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute(
-                "INSERT OR REPLACE INTO spam_config (id, data) VALUES (1, ?)",
-                (json.dumps(config.model_dump(exclude_none=True, by_alias=True)),),
-            )
 
     def load_imaps(self) -> list[ImapConfig]:
         with sqlite3.connect(self.db_path) as conn:
@@ -170,53 +130,63 @@ class Db:
         states[state.key()] = state
         self.save_states(states)
 
-    def load_scheduler_config(self) -> SchedulerConfig:
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute("SELECT data FROM scheduler_config WHERE id=1")
-            row = c.fetchone()
-        if row:
-            return SchedulerConfig(**json.loads(row[0]))
-        return SchedulerConfig()
 
-    def save_scheduler_config(self, config: SchedulerConfig) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute(
-                "INSERT OR REPLACE INTO scheduler_config (id, data) VALUES (1, ?)",
-                (json.dumps(config.model_dump(by_alias=True)),),
-            )
+def migrate_legacy_config_to_env(data_dir: Path, config: ConfigManager) -> None:
+    """One-time migration: fold values from the pre-ConfigManager single-row Db tables
+    (ui_config/scheduler_config/logging_config/spam_config) into .env, then leave a
+    marker so this never re-runs. Those tables/columns may still physically exist in
+    an upgraded instance's mailmanager.db even though Db no longer creates or reads
+    them going forward — this is the only remaining reader, and only ever once.
+    """
+    marker = data_dir / ".config_migrated_from_db"
+    if marker.exists():
+        return
 
-    def load_logging_config(self) -> LoggingConfig:
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute("SELECT data FROM logging_config WHERE id=1")
-            row = c.fetchone()
-        if row:
-            return LoggingConfig(**json.loads(row[0]))
-        return LoggingConfig()
-
-    def save_logging_config(self, config: LoggingConfig) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute(
-                "INSERT OR REPLACE INTO logging_config (id, data) VALUES (1, ?)",
-                (json.dumps(config.model_dump()),),
-            )
-
-    def load_ui_config(self) -> UiConfig:
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute("SELECT data FROM ui_config WHERE id=1")
-            row = c.fetchone()
-        if row:
-            return UiConfig(**json.loads(row[0]))
-        return UiConfig()
-
-    def save_ui_config(self, config: UiConfig) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute(
-                "INSERT OR REPLACE INTO ui_config (id, data) VALUES (1, ?)",
-                (json.dumps(config.model_dump(by_alias=True)),),
-            )
+    db_path = data_dir / "mailmanager.db"
+    try:
+        updates: dict[str, str] = {}
+        if db_path.exists():
+            with sqlite3.connect(db_path) as conn:
+                c = conn.cursor()
+                for table in ("ui_config", "scheduler_config", "logging_config", "spam_config"):
+                    try:
+                        c.execute(f"SELECT data FROM {table} WHERE id=1")
+                        row = c.fetchone()
+                    except sqlite3.OperationalError:
+                        row = None
+                    if not row:
+                        continue
+                    data = json.loads(row[0])
+                    if table == "ui_config":
+                        if "autoRefreshEnabled" in data:
+                            updates["REFRESH_ENABLED"] = str(data["autoRefreshEnabled"]).lower()
+                        if "autoRefreshSeconds" in data:
+                            updates["REFRESH_INTERVAL"] = str(data["autoRefreshSeconds"])
+                    elif table == "scheduler_config":
+                        if "enabled" in data:
+                            updates["SCHEDULER_ENABLED"] = str(data["enabled"]).lower()
+                        if "intervalSeconds" in data:
+                            updates["SCHEDULER_INTERVAL_SECONDS"] = str(data["intervalSeconds"])
+                    elif table == "logging_config":
+                        if "level" in data:
+                            updates["LOG_LEVEL"] = str(data["level"])
+                    elif table == "spam_config":
+                        if "enabled" in data:
+                            updates["SPAM_ENABLED"] = str(data["enabled"]).lower()
+                        if "host" in data:
+                            updates["SPAM_HOST"] = str(data["host"])
+                        if "port" in data:
+                            updates["SPAM_PORT"] = str(data["port"])
+                        if data.get("user"):
+                            updates["SPAM_USER"] = str(data["user"])
+                        if "connectTimeoutMillis" in data:
+                            updates["SPAM_CONNECT_TIMEOUT_MS"] = str(data["connectTimeoutMillis"])
+                        if "readTimeoutMillis" in data:
+                            updates["SPAM_READ_TIMEOUT_MS"] = str(data["readTimeoutMillis"])
+        if updates:
+            config.update_many(updates)
+            logger.info("Migrated %d config key(s) from Db to .env", len(updates))
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+    except (OSError, ValueError, sqlite3.Error) as exc:
+        logger.warning("Config migration from Db failed, will retry next boot: %s", exc)
