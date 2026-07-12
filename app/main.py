@@ -147,6 +147,11 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/")
+async def root() -> RedirectResponse:
+    return RedirectResponse(url="/ui/")
+
+
 @app.middleware("http")
 async def _auth_gate(request: Request, call_next: Callable) -> Response:
     path = request.url.path
