@@ -1,6 +1,6 @@
 # Changes here will be overwritten by Copier; used by `copier update`.
 _commit: v0.1.0
-_src_path: C:\redberry\src\python\redberry-webapp-template
+_src_path: C:/redberry/src/python/redberry-webapp-template
 app_name: MailManager
 app_slug: mailmanager
 github_owner: daniloreddy
