@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import asyncio
 import os
 from pathlib import Path
 
@@ -14,6 +17,7 @@ _DATA_DIR = Path(os.environ.get("MAILMANAGER_DATA_DIR", "data"))
 TRUSTED_PROXIES = {
     ip.strip() for ip in os.getenv("TRUSTED_PROXIES", "127.0.0.1").split(",") if ip.strip()
 }
+_FORCE_SECURE_COOKIE = os.getenv("AUTH_SECURE_COOKIE", "0").strip().lower() in ("1", "true", "yes")
 
 auth = AuthManager(
     auth_file=_DATA_DIR / "auth.json", cookie_name="mailmanager_session", token_ttl=7 * 24 * 3600
@@ -43,7 +47,11 @@ async def auth_login(request: Request, password: str = Form(...)) -> RedirectRes
     if auth.is_ip_blocked(ip):
         return RedirectResponse(url="/login?error=blocked", status_code=303)
 
-    success = auth.verify_password(password)
+    # scrypt at redberry_webkit's current cost (N=131072) takes ~150-250ms and allocates
+    # ~128MB — running it inline would block the event loop for that whole window on
+    # every login attempt, see @rules/uvicorn.md §5 for why CPU/memory-bound sync work
+    # in an async handler goes through to_thread instead.
+    success = await asyncio.to_thread(auth.verify_password, password)
     auth.record_attempt(ip, success=success)
     if not success:
         return RedirectResponse(url="/login?error=invalid", status_code=303)
@@ -55,14 +63,19 @@ async def auth_login(request: Request, password: str = Form(...)) -> RedirectRes
         token,
         httponly=True,
         samesite="strict",
-        secure=is_secure_context(request.headers),
+        secure=_FORCE_SECURE_COOKIE or is_secure_context(request.headers),
         max_age=auth.token_ttl,
     )
     return response
 
 
 @router.get("/auth/logout")
-async def auth_logout() -> RedirectResponse:
+async def auth_logout(request: Request) -> RedirectResponse:
     response = RedirectResponse(url="/login", status_code=303)
-    response.delete_cookie(auth.cookie_name)
+    response.delete_cookie(
+        auth.cookie_name,
+        httponly=True,
+        samesite="strict",
+        secure=_FORCE_SECURE_COOKIE or is_secure_context(request.headers),
+    )
     return response

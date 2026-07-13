@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dotenv import load_dotenv
 from redberry_webkit.env_resolver import resolve_env_path
 
@@ -9,7 +11,7 @@ import asyncio  # noqa: E402
 import logging  # noqa: E402
 import os  # noqa: E402
 import sys  # noqa: E402
-from collections.abc import AsyncGenerator, Callable  # noqa: E402
+from collections.abc import AsyncGenerator  # noqa: E402
 from contextlib import asynccontextmanager  # noqa: E402
 from logging.handlers import RotatingFileHandler  # noqa: E402
 from pathlib import Path  # noqa: E402
@@ -22,6 +24,7 @@ from redberry_webkit.logging_utils import CredentialFilter  # noqa: E402
 from slowapi import Limiter, _rate_limit_exceeded_handler  # noqa: E402
 from slowapi.errors import RateLimitExceeded  # noqa: E402
 from slowapi.middleware import SlowAPIMiddleware  # noqa: E402
+from starlette.middleware.base import RequestResponseEndpoint  # noqa: E402
 
 from .config import config  # noqa: E402
 from .db import Db, migrate_legacy_config_to_env  # noqa: E402
@@ -89,6 +92,21 @@ async def _config_reload_loop(interval_s: int) -> None:
             logging.getLogger().setLevel(config.get("LOG_LEVEL", "INFO"))
 
 
+def _crash_on_task_error(task: asyncio.Task[None]) -> None:
+    # A background loop task (purge_loop, config reload) is only ever supposed to end
+    # via .cancel() at shutdown. If it dies from an unhandled exception instead, asyncio
+    # would otherwise just log "Task exception was never retrieved" and keep the process
+    # alive with silently broken rate-limit purging / config hot-reload — worse than crashing.
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.critical(
+            "Background task %s died unexpectedly, exiting", task.get_name(), exc_info=exc
+        )
+        os._exit(1)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     global _lock
@@ -119,7 +137,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     scheduler.start()
     purge_task = asyncio.create_task(purge_loop(auth))
+    purge_task.add_done_callback(_crash_on_task_error)
     config_task = asyncio.create_task(_config_reload_loop(CONFIG_RELOAD_INTERVAL_S))
+    config_task.add_done_callback(_crash_on_task_error)
 
     yield
 
@@ -154,7 +174,7 @@ async def root() -> RedirectResponse:
 
 
 @app.middleware("http")
-async def _auth_gate(request: Request, call_next: Callable) -> Response:
+async def _auth_gate(request: Request, call_next: RequestResponseEndpoint) -> Response:
     path = request.url.path
     if path in _LOGIN_PATHS or any(path.startswith(p) for p in _UI_BYPASS_PREFIXES):
         return await call_next(request)

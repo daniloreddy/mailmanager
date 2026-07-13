@@ -45,6 +45,19 @@ def test_health_endpoint(app: FastAPI) -> None:
         assert resp.json() == {"status": "ok"}
 
 
+def test_root_redirects_to_ui(app: FastAPI) -> None:
+    with TestClient(app) as client:
+        resp = client.get("/", follow_redirects=False)
+        assert resp.status_code == 307
+        assert resp.headers["location"] == "/ui/"
+
+
+def test_docs_disabled_when_not_dev(app: FastAPI) -> None:
+    with TestClient(app) as client:
+        resp = client.get("/docs")
+        assert resp.status_code == 404
+
+
 def test_redirects_to_login_without_cookie(app: FastAPI) -> None:
     with TestClient(app) as client:
         resp = client.get("/ui", follow_redirects=False)
