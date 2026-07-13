@@ -39,8 +39,9 @@ _IS_DOCKER = Path("/.dockerenv").exists()
 # (uvicorn.md §6: never point a test at the project's real data/ directory).
 _DATA_DIR = Path(os.environ.get("MAILMANAGER_DATA_DIR", "data"))
 
-_PUBLIC_PATHS = {"/health", "/login", "/auth/login", "/auth/logout"}
-_BYPASS_PREFIXES = ("/ui/_nicegui",)
+_UI_PREFIX = "/ui"
+_LOGIN_PATHS = {"/login", "/auth/login", "/auth/logout"}
+_UI_BYPASS_PREFIXES = (f"{_UI_PREFIX}/_nicegui",)
 
 DEV = os.environ.get("DEV", "false").lower() in ("true", "1", "yes")
 CONFIG_RELOAD_INTERVAL_S = 5
@@ -155,12 +156,14 @@ async def root() -> RedirectResponse:
 @app.middleware("http")
 async def _auth_gate(request: Request, call_next: Callable) -> Response:
     path = request.url.path
-    if path in _PUBLIC_PATHS or any(path.startswith(p) for p in _BYPASS_PREFIXES):
+    if path in _LOGIN_PATHS or any(path.startswith(p) for p in _UI_BYPASS_PREFIXES):
         return await call_next(request)
-    token = request.cookies.get(auth.cookie_name, "")
-    if auth.verify_token(token):
-        return await call_next(request)
-    return RedirectResponse(url="/login", status_code=302)
+    if path == _UI_PREFIX or path.startswith(_UI_PREFIX + "/"):
+        token = request.cookies.get(auth.cookie_name, "")
+        if auth.verify_token(token):
+            return await call_next(request)
+        return RedirectResponse(url="/login", status_code=302)
+    return await call_next(request)
 
 
 # Register NiceGUI pages and mount into FastAPI app

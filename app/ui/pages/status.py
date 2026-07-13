@@ -29,26 +29,26 @@ async def status_page() -> None:
 
         with ui.grid(columns=4).classes("full-width q-mb-md"):
             metric_card(
-                "Status",
-                "● Running" if s.is_running else "○ Idle",
+                "Stato",
+                "● In esecuzione" if s.is_running else "○ Inattivo",
                 "positive" if s.is_running else "grey",
             )
-            metric_card("Total Runs", str(s.run_count))
-            metric_card("Last Run", _fmt(s.last_run_at), "grey")
-            metric_card("Next Run", _fmt(s.next_run_at), "grey")
+            metric_card("Esecuzioni totali", str(s.run_count))
+            metric_card("Ultima esecuzione", _fmt(s.last_run_at), "grey")
+            metric_card("Prossima esecuzione", _fmt(s.next_run_at), "grey")
 
         if s.last_error:
             with ui.card().classes("q-pa-sm q-mb-md full-width"):
-                ui.label(f"Last error: {s.last_error}").classes("text-negative text-body2")
+                ui.label(f"Ultimo errore: {s.last_error}").classes("text-negative text-body2")
 
         async def run_now() -> None:
             if scheduler.trigger_run_now():
-                ui.notify("Run triggered", type="positive")
+                ui.notify("Esecuzione avviata", type="positive")
                 content.refresh()
             else:
-                ui.notify("Already running", type="warning")
+                ui.notify("Già in esecuzione", type="warning")
 
-        ui.button("▶ Run Now", on_click=run_now).props(
+        ui.button("▶ Esegui ora", on_click=run_now).props(
             "color=primary" + (" disabled" if s.is_running else "")
         )
 
@@ -76,7 +76,7 @@ async def status_page() -> None:
                 columns=[
                     {"name": "timestamp", "label": "Quando", "field": "timestamp"},
                     {"name": "account", "label": "Account", "field": "account"},
-                    {"name": "status", "label": "Status", "field": "status"},
+                    {"name": "status", "label": "Stato", "field": "status"},
                     {"name": "duration_s", "label": "Durata (s)", "field": "duration_s"},
                     {"name": "error_message", "label": "Errore", "field": "error_message"},
                 ],
@@ -95,7 +95,7 @@ async def status_page() -> None:
                 """,
             )
 
-    with base_layout("Status"):
+    with base_layout("Stato"):
         with ui.column().classes("full-width").style("padding:1.25rem;"):
             content()
             await history_table()

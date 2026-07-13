@@ -20,15 +20,17 @@ def _imap_form(cfg: ImapConfig | None = None) -> dict[str, Any]:
         )
         ui.separator()
 
-    _sep("Connection")
+    _sep("Connessione")
     with ui.grid(columns=2).classes("full-width").style("gap:12px;"):
-        refs["name"] = ui.input("Name *", value=c.name).classes("col-span-1")
+        refs["name"] = ui.input("Nome *", value=c.name).classes("col-span-1")
         if is_edit:
             refs["name"].props("readonly")
         refs["host"] = ui.input("Host *", value=c.host).classes("col-span-1")
-        refs["port"] = ui.input("Port", value=c.port).classes("col-span-1")
-        refs["inbox_folder"] = ui.input("Inbox Folder", value=c.inbox_folder).classes("col-span-1")
-        refs["username"] = ui.input("Username", value=c.username).classes("col-span-1")
+        refs["port"] = ui.input("Porta", value=c.port).classes("col-span-1")
+        refs["inbox_folder"] = ui.input("Cartella Inbox", value=c.inbox_folder).classes(
+            "col-span-1"
+        )
+        refs["username"] = ui.input("Nome utente", value=c.username).classes("col-span-1")
         refs["password"] = ui.input(
             "Password", value=c.password, password=True, password_toggle_button=True
         ).classes("col-span-1")
@@ -39,23 +41,25 @@ def _imap_form(cfg: ImapConfig | None = None) -> dict[str, Any]:
     _sep("Spam")
     with ui.grid(columns=2).classes("full-width").style("gap:12px;"):
         refs["spam_action"] = ui.select(
-            _SPAM_ACTIONS, value=c.spam_action.value, label="Spam Action"
+            _SPAM_ACTIONS, value=c.spam_action.value, label="Azione Spam"
         )
-        refs["spam_folder"] = ui.input("Spam Folder", value=c.spam_folder)
+        refs["spam_folder"] = ui.input("Cartella Spam", value=c.spam_folder)
     with ui.row().classes("full-width"):
-        refs["use_spam_assassin"] = ui.checkbox("Use SpamAssassin", value=c.use_spam_assassin)
+        refs["use_spam_assassin"] = ui.checkbox("Usa SpamAssassin", value=c.use_spam_assassin)
 
-    _sep("Timeouts (ms)")
+    _sep("Timeout (ms)")
     with ui.grid(columns=3).classes("full-width").style("gap:12px;"):
-        refs["connection_timeout_ms"] = ui.number("Connect", value=c.connection_timeout_ms, min=0)
-        refs["read_timeout_ms"] = ui.number("Read", value=c.read_timeout_ms, min=0)
-        refs["write_timeout_ms"] = ui.number("Write", value=c.write_timeout_ms, min=0)
+        refs["connection_timeout_ms"] = ui.number(
+            "Connessione", value=c.connection_timeout_ms, min=0
+        )
+        refs["read_timeout_ms"] = ui.number("Lettura", value=c.read_timeout_ms, min=0)
+        refs["write_timeout_ms"] = ui.number("Scrittura", value=c.write_timeout_ms, min=0)
 
-    _sep("SMTP (for forwarding)")
+    _sep("SMTP (per l'inoltro)")
     with ui.grid(columns=2).classes("full-width").style("gap:12px;"):
         refs["smtp_host"] = ui.input("Host", value=c.smtp_host)
-        refs["smtp_port"] = ui.input("Port", value=c.smtp_port)
-        refs["smtp_username"] = ui.input("Username", value=c.smtp_username)
+        refs["smtp_port"] = ui.input("Porta", value=c.smtp_port)
+        refs["smtp_username"] = ui.input("Nome utente", value=c.smtp_username)
         refs["smtp_password"] = ui.input(
             "Password", value=c.smtp_password, password=True, password_toggle_button=True
         )
@@ -104,20 +108,24 @@ async def imap_page() -> None:
 
         with ui.card().classes("full-width"):
             with ui.row().classes("justify-between items-center q-mb-md"):
-                ui.label("IMAP Configurations").classes("text-h6")
-                ui.button("+ Add", on_click=lambda: open_dialog()).props("color=primary size=sm")
+                ui.label("Configurazioni IMAP").classes("text-h6")
+                ui.button("+ Aggiungi", on_click=lambda: open_dialog()).props(
+                    "color=primary size=sm"
+                )
 
             if not configs:
-                ui.label("No configurations").classes("text-grey-6 text-center q-pa-xl full-width")
+                ui.label("Nessuna configurazione").classes(
+                    "text-grey-6 text-center q-pa-xl full-width"
+                )
                 return
 
             with ui.row().classes(
                 "q-px-sm q-py-xs text-grey-6 full-width text-caption "
                 "text-uppercase text-weight-bold"
             ):
-                ui.label("Name").style("width:140px;")
+                ui.label("Nome").style("width:140px;")
                 ui.label("Host").style("width:200px;")
-                ui.label("Username").style("flex:1;")
+                ui.label("Nome utente").style("flex:1;")
                 ui.label("SSL").style("width:55px;")
                 ui.label("Spam").style("width:55px;")
                 ui.label("").style("width:100px;")
@@ -128,15 +136,17 @@ async def imap_page() -> None:
                     ui.label(c.name).classes("text-weight-bold").style("width:140px;")
                     ui.label(f"{c.host}:{c.port}").classes("text-grey-6").style("width:200px;")
                     ui.label(c.username).classes("text-grey-6").style("flex:1;")
-                    _badge("SSL" if c.ssl else "Plain", "ok" if c.ssl else "off", "55px")
+                    _badge("SSL" if c.ssl else "Semplice", "ok" if c.ssl else "off", "55px")
                     _badge(
-                        "On" if c.use_spam_assassin else "Off",
+                        "Attivo" if c.use_spam_assassin else "Non attivo",
                         "ok" if c.use_spam_assassin else "off",
                         "55px",
                     )
                     with ui.row().style("width:100px;").classes("q-gutter-xs"):
-                        ui.button("Edit", on_click=lambda c=c: open_dialog(c)).props("flat size=sm")
-                        ui.button("Del", on_click=lambda c=c: confirm_delete(c.name)).props(
+                        ui.button("Modifica", on_click=lambda c=c: open_dialog(c)).props(
+                            "flat size=sm"
+                        )
+                        ui.button("Elim.", on_click=lambda c=c: confirm_delete(c.name)).props(
                             "flat size=sm color=negative"
                         )
                 ui.separator()
@@ -148,7 +158,7 @@ async def imap_page() -> None:
 
     async def open_dialog(cfg: ImapConfig | None = None) -> None:
         is_edit = cfg is not None
-        title = "Edit IMAP Config" if is_edit else "Add IMAP Config"
+        title = "Modifica configurazione IMAP" if is_edit else "Aggiungi configurazione IMAP"
 
         with (
             ui.dialog() as dialog,
@@ -161,34 +171,34 @@ async def imap_page() -> None:
                 try:
                     new_cfg = _refs_to_imap(refs)
                     if not new_cfg.name:
-                        ui.notify("Name is required", type="negative")
+                        ui.notify("Il nome è obbligatorio", type="negative")
                         return
                     db.save_imaps([new_cfg])
-                    ui.notify("Saved", type="positive")
+                    ui.notify("Salvato", type="positive")
                     dialog.close()
                     imap_table.refresh()
                 except Exception as exc:
-                    ui.notify(f"Error: {exc}", type="negative")
+                    ui.notify(f"Errore: {exc}", type="negative")
 
             with ui.row().classes("justify-end q-mt-md q-gutter-xs"):
-                ui.button("Cancel", on_click=dialog.close).props("flat").classes("text-grey-6")
-                ui.button("Save", on_click=save).props("color=primary")
+                ui.button("Annulla", on_click=dialog.close).props("flat").classes("text-grey-6")
+                ui.button("Salva", on_click=save).props("color=primary")
 
         dialog.open()
 
     async def confirm_delete(name: str) -> None:
         with ui.dialog() as dlg, ui.card():
-            ui.label(f'Delete "{name}"?').classes("text-h6 q-mb-md")
+            ui.label(f'Eliminare "{name}"?').classes("text-h6 q-mb-md")
             with ui.row().classes("justify-end q-gutter-xs"):
-                ui.button("Cancel", on_click=dlg.close).props("flat").classes("text-grey-6")
+                ui.button("Annulla", on_click=dlg.close).props("flat").classes("text-grey-6")
 
                 async def do_delete() -> None:
                     db.delete_imap(name)
                     dlg.close()
-                    ui.notify(f'Deleted "{name}"', type="positive")
+                    ui.notify(f'Eliminato "{name}"', type="positive")
                     imap_table.refresh()
 
-                ui.button("Delete", on_click=do_delete).props("color=negative")
+                ui.button("Elimina", on_click=do_delete).props("color=negative")
         dlg.open()
 
     with base_layout("IMAP"):

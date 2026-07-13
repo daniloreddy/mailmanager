@@ -1,20 +1,24 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 cd "$(dirname "$0")/.."
 
-if [ ! -d ".venv" ]; then
-    echo "Creating venv..."
+if [ ! -f ".venv/bin/activate" ]; then
+    echo "Virtual environment non trovato, lo creo..."
     python3 -m venv .venv
-    .venv/bin/pip install -r requirements.txt -r requirements.dev.txt
+fi
+source .venv/bin/activate
+if ! python -c "import ruff" 2>/dev/null; then
+    echo "Dipendenze non installate, le installo..."
+    pip install -r requirements.dev.txt
 fi
 
-source .venv/bin/activate
-
-echo "Running Ruff check..."
+echo "=== ruff ==="
 ruff check .
-echo "Running Ruff format..."
-ruff format .
-echo "Running Mypy..."
-mypy .
-echo "Running Pytest..."
-pytest tests/
+
+echo "=== mypy ==="
+mypy app
+
+echo "=== pytest ==="
+pytest
+
+echo "Tutti i check sono passati."

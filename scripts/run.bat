@@ -1,15 +1,15 @@
 @echo off
+setlocal
 cd /d "%~dp0.."
 
-if not exist venv\Scripts\activate.bat (
-    echo Creating venv...
+if not exist "venv\Scripts\activate.bat" (
+    echo Virtual environment non trovato, lo creo...
     python -m venv venv
-    venv\Scripts\pip install -r requirements.txt
-    if %errorlevel% neq 0 exit /b %errorlevel%
 )
-
 call venv\Scripts\activate.bat
-
-:: Optional: set PORT=8080
+if not exist "venv\Lib\site-packages\fastapi" (
+    echo Dipendenze non installate, le installo...
+    pip install -r requirements.txt
+)
 
 python -m app.main %*

@@ -7,7 +7,7 @@ IMAP rule-based email sorter with SpamAssassin integration. Runs as a daemon: Fa
 - **Spam Detection**: Integrated SpamAssassin support via SPAMC protocol.
 - **State Tracking**: IMAP UID tracking to avoid redundant processing.
 - **Web UI**: NiceGUI interface with Status, IMAP, Rules, and Settings tabs (auto-refresh interval configurable).
-- **Auth**: Cookie-based session auth always required on `/ui`, independent of network binding (`HOST`/`BIND_HOST`).
+- **Auth**: Cookie-based session auth always required on `/ui`, independent of network binding (`HOST`).
 - **Docker Ready**: Single container, no external dependencies.
 
 ## Quick Start (Docker)
@@ -23,7 +23,7 @@ Create `.env` (template: [`.env.example`](.env.example) in the repo):
 
 ```bash
 # PORT=8080             # HTTP port (default 8080)
-# BIND_HOST=127.0.0.1   # host-side publish address — 0.0.0.0 for LAN/reverse-proxy/direct exposure
+# HOST=127.0.0.1        # host-side publish address (Docker) / bind interface (manual run) — 0.0.0.0 for LAN/reverse-proxy/direct exposure
 # AUTH_SECURE_COOKIE=1              # force Secure flag on session cookie
 # TRUSTED_PROXIES=127.0.0.1         # IPs trusted for X-Forwarded-For
 # TZ=Europe/Rome                    # timezone for UI timestamps (default UTC)
@@ -38,14 +38,13 @@ services:
     container_name: mailmanager
     restart: unless-stopped
     ports:
-      - "${BIND_HOST:-127.0.0.1}:${PORT:-8080}:${PORT:-8080}"
+      - "${HOST:-127.0.0.1}:${PORT:-8080}:${PORT:-8080}"
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=${TZ:-UTC}
       - PORT=${PORT:-8080}
-      - HOST=0.0.0.0   # container-internal bind, always 0.0.0.0 — see BIND_HOST for external exposure
-      - NICEGUI_STORAGE_PATH=/app/data/.nicegui
       - ENV_FILE=/app/hostcfg/.env
+      - NICEGUI_STORAGE_PATH=/app/data/.nicegui
     volumes:
       - .:/app/hostcfg
       - ./data:/app/data
@@ -80,13 +79,13 @@ Open `http://localhost:8080` — you'll be redirected to the login page; after l
 
 ## Auth is always on; network binding is a separate, independent choice
 
-Login (cookie session) is always required to reach `/ui` — there's no way to disable it. `HOST`/`BIND_HOST` control something else entirely: which interface the server accepts connections on. Default `127.0.0.1` (localhost only); set to `0.0.0.0` to accept connections from other machines.
+Login (cookie session) is always required to reach `/ui` — there's no way to disable it. `HOST` controls something else entirely: which interface the server accepts connections on. Default `127.0.0.1` (localhost only); set to `0.0.0.0` to accept connections from other machines.
 
 Examples:
 - Trusted LAN, `HOST=0.0.0.0` — still logs in with a password, just reachable from other machines on the LAN.
 - `HOST=127.0.0.1` (default) behind a Cloudflare Tunnel or SSH reverse tunnel exposed to the internet — bind stays local, auth protects the internet-reachable tunnel endpoint.
 
-For manual (non-Docker) runs, `HOST` is read directly from `.env`/the shell environment (default `127.0.0.1`). In Docker, the container's own `127.0.0.1` is unreachable from the host, so `HOST=0.0.0.0` is fixed inside the container (see `docker-compose.yml`) — use `BIND_HOST` to control what's actually reachable from outside the container.
+For manual (non-Docker) runs, `HOST` is read directly from `.env`/the shell environment and used as the actual bind interface (default `127.0.0.1`). In Docker, the container's own `127.0.0.1` is unreachable from the host, so the container-internal bind is hardcoded to `0.0.0.0` in the Dockerfile `CMD` (not read from env) — `HOST` instead controls the Compose `ports:` publish address (see `docker-compose.yml`), i.e. what's actually reachable from outside the container.
 
 ---
 
@@ -94,8 +93,7 @@ For manual (non-Docker) runs, `HOST` is read directly from `.env`/the shell envi
 
 | Variable | Default | Description |
 |---|---|---|
-| `HOST` | `127.0.0.1` | Interface to bind (manual/non-Docker runs only; fixed to `0.0.0.0` inside Docker) |
-| `BIND_HOST` | `127.0.0.1` | Docker only — host-side publish address for the `ports:` mapping |
+| `HOST` | `127.0.0.1` | Bind interface (manual/non-Docker runs) / Compose `ports:` publish address (Docker) |
 | `PORT` | `8080` | HTTP port |
 | `AUTH_SECURE_COOKIE` | _(unset)_ | Set to `1` to force `Secure` flag on the session cookie |
 | `TRUSTED_PROXIES` | `127.0.0.1` | Comma-separated IPs trusted to forward `X-Forwarded-For` |

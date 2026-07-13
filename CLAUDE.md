@@ -169,9 +169,9 @@ Unchanged by the redberry-webkit migration — still free of FastAPI imports (uv
 - Registry: `ghcr.io/daniloreddy/mailmanager`
 - CI/CD: `.github/workflows/docker-publish.yml` (triggers on push to main and tags)
 - Volumes: `/app/data` (SQLite + lock + metrics.db)
-- Env vars: `HOST`, `BIND_HOST`, `PORT`, `AUTH_SECURE_COOKIE`, `TRUSTED_PROXIES`, `TZ`, `DEV` (boot-time-only, see Key invariants) plus the `ConfigManager`-backed runtime settings in `.env.example` (`REFRESH_*`, `SCHEDULER_*`, `LOG_LEVEL`, `SPAM_*`)
-- Dockerfile installs `git` transiently in the builder stage (needed by pip to resolve the `redberry-webkit @ git+https://...` pin), purges it before the final image; final stage runs as non-root `appuser`; `COPY` is selective (`app/`, `static/`, `scripts/` only — no `.git`/`data`/`tests` in the image)
-- `docker-compose.yml`/`docker-compose-dev.yml` set `TZ=${TZ:-UTC}` (container clock), `HOST=0.0.0.0` (fixed — container-internal bind, see Key invariants), `PORT=${PORT:-8080}`, and `NICEGUI_STORAGE_PATH=/app/data/.nicegui` (persists `app.storage.user`, e.g. dark mode, across container recreation); `docker-compose.yml` additionally publishes `ports:` at `${BIND_HOST:-127.0.0.1}:${PORT}:${PORT}` — deployer's choice for external reachability, unrelated to the container-internal `HOST`
+- Env vars: `HOST`, `PORT`, `AUTH_SECURE_COOKIE`, `TRUSTED_PROXIES`, `TZ`, `DEV` (boot-time-only, see Key invariants) plus the `ConfigManager`-backed runtime settings in `.env.example` (`REFRESH_*`, `SCHEDULER_*`, `LOG_LEVEL`, `SPAM_*`)
+- Dockerfile installs `git` transiently (needed by pip to resolve the `redberry-webkit @ git+https://...` pin), purges it before the final image; runs as non-root `appuser`; `COPY` is selective (`app/`, `static/`, `scripts/` only — no `.git`/`data`/`tests` in the image)
+- `docker-compose.yml`/`docker-compose-dev.yml` set `TZ=${TZ:-UTC}` (container clock), `PORT=${PORT:-8080}`, and `NICEGUI_STORAGE_PATH=/app/data/.nicegui` (persists `app.storage.user`, e.g. dark mode, across container recreation); the container-internal bind (`--host 0.0.0.0`) is hardcoded in the Dockerfile `CMD`, not read from env. `docker-compose.yml` publishes `ports:` at `${HOST:-127.0.0.1}:${PORT}:${PORT}` — same `HOST` var used for the bare-metal bind (uvicorn.md §2), reused here for the Compose publish address since native and Docker never run against the same `.env` at once
 
 ## Post-upgrade migration (redberry-webkit adoption) — required, one-time
 

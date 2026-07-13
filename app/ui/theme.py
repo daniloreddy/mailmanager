@@ -11,10 +11,10 @@ _APP_NAME: str = "MailManager"
 _VERSION: str = "1.0.0"
 
 _NAV_ITEMS: list[tuple[str, str, str]] = [
-    ("Status", "monitor", "/"),
+    ("Stato", "monitor", "/"),
     ("IMAP", "email", "/imap"),
-    ("Rules", "rule", "/rules"),
-    ("Settings", "settings", "/settings"),
+    ("Regole", "rule", "/rules"),
+    ("Impostazioni", "settings", "/settings"),
 ]
 
 
@@ -51,7 +51,7 @@ def _header(
 
             ui.button(icon="contrast", on_click=_toggle_dark).props(
                 "flat color=white round"
-            ).tooltip("Dark / Light")
+            ).tooltip("Tema chiaro/scuro")
 
         ui.label(_APP_NAME).classes("text-body2").style("opacity:0.6")
 
@@ -67,7 +67,7 @@ def _logout_action() -> None:
     ui.button(
         icon="logout",
         on_click=lambda: ui.run_javascript("window.location.href='/auth/logout'"),
-    ).props("flat color=white round").tooltip("Logout")
+    ).props("flat color=white round").tooltip("Esci")
 
 
 @contextmanager

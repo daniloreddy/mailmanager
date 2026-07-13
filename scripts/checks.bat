@@ -1,27 +1,27 @@
 @echo off
+setlocal
 cd /d "%~dp0.."
 
-if not exist venv\Scripts\activate.bat (
-    echo Creating venv...
+if not exist "venv\Scripts\activate.bat" (
+    echo Virtual environment non trovato, lo creo...
     python -m venv venv
-    venv\Scripts\pip install -r requirements.txt -r requirements.dev.txt
-    if %errorlevel% neq 0 exit /b %errorlevel%
+)
+call venv\Scripts\activate.bat
+if not exist "venv\Lib\site-packages\ruff" (
+    echo Dipendenze non installate, le installo...
+    pip install -r requirements.dev.txt
 )
 
-call venv\Scripts\activate.bat
-
-echo Running Ruff check...
+echo === ruff ===
 ruff check .
-if %errorlevel% neq 0 exit /b %errorlevel%
+if errorlevel 1 exit /b 1
 
-echo Running Ruff format...
-ruff format .
-if %errorlevel% neq 0 exit /b %errorlevel%
+echo === mypy ===
+mypy app
+if errorlevel 1 exit /b 1
 
-echo Running Mypy...
-mypy .
-if %errorlevel% neq 0 exit /b %errorlevel%
+echo === pytest ===
+pytest
+if errorlevel 1 exit /b 1
 
-echo Running Pytest...
-pytest tests/
-if %errorlevel% neq 0 exit /b %errorlevel%
+echo Tutti i check sono passati.
