@@ -8,4 +8,4 @@ python-multipart>=0.0.9
 slowapi>=0.1.9
 imapclient>=3.0.0
 portalocker>=2.8.2
-redberry-webkit @ git+https://github.com/daniloreddy/redberry-webkit.git@v0.2.1
+redberry-webkit @ git+https://github.com/daniloreddy/redberry-webkit.git@v0.2.2
